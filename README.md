@@ -35,6 +35,5 @@ packages/
 
 prisma/      Prisma configuration/schema
 
-docs/        Architecture and requirements documentation
 
 scripts/     Development and deployment scripts
