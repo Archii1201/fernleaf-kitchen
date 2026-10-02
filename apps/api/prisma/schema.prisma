@@ -1,7 +1,1186 @@
+// Fernleaf Kitchen - domain data model (Step 3).
+//
+// Conventions used throughout this schema:
+//   * Primary keys are UUID strings (`@default(uuid())`).
+//   * Money is stored as integer cents (`...Cents`), never as Float/Decimal.
+//   * Percentages/ratios are stored as basis points (`...BasisPoints`),
+//     10000 basis points = 100%.
+//   * Date-only business concepts use `@db.Date`, clock times use `@db.Time(0)`,
+//     and points in time are UTC `DateTime` values.
+//   * Historical records (orders and everything below them) carry snapshot
+//     columns so later catalogue edits cannot rewrite the past.
+//   * Catalogue/reference rows are deactivated (`active`), not hard deleted;
+//     relations from historical tables use `Restrict` to enforce that.
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums - fixed application states only. Admin-managed lists (allergens,
+// dietary tags, kitchen stations, packaging types, portion sizes) are tables.
+// ---------------------------------------------------------------------------
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum DishTemperature {
+  HOT
+  COLD
+  AMBIENT
+}
+
+/// How a tier derives a price when no explicit tier price row exists.
+/// Step 3 only stores the intent; the calculation belongs to a later step.
+enum PricingStrategy {
+  EXPLICIT
+  COST_MULTIPLIER
+  BASE_MARKUP
+}
+
+enum OrderStatus {
+  DRAFT
+  PLACED
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  IN_KITCHEN
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+}
+
+enum OrderEventType {
+  DRAFT
+  PLACED
+  CONFIRMED
+  CANCELLED
+  REJECTED
+  KITCHEN_STARTED
+  KITCHEN_READY
+  DISPATCH_READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+}
+
+enum OrderEventActorType {
+  STAFF
+  CUSTOMER_EMPLOYEE
+  SYSTEM
+}
+
+enum PrepUnitStatus {
+  PENDING
+  IN_PROGRESS
+  READY
+  CANCELLED
+}
+
+enum DropStatus {
+  PENDING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+}
+
+enum InvoiceLineType {
+  ORDER
+  CREDIT
+  ADJUSTMENT
+}
+
+enum CutoffRunStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Authentication and internal staff
+// ---------------------------------------------------------------------------
+
+/// Login identity for internal staff. Customer-side people are
+/// `CustomerEmployee` and intentionally have no row here.
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String
+  roleId       String
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  role           Role          @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  staff          Staff?        @relation("StaffAccount")
+  uploadedFiles  DbFile[]      @relation("DbFileUploader")
+  createdCredits OrderCredit[] @relation("OrderCreditCreatedBy")
+  orderEvents    OrderEvent[]  @relation("OrderEventActorUser")
+
+  @@index([roleId])
+}
+
+/// Operational identity of an internal staff member (chef, driver, admin).
+/// `userId` is optional so a driver can exist without a login.
+model Staff {
+  id        String  @id @default(uuid())
+  userId    String? @unique
+  staffCode String  @unique
+  fullName  String
+  phone     String?
+  jobTitle  String?
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User?   @relation("StaffAccount", fields: [userId], references: [id], onDelete: SetNull)
+  drivenOrders Order[] @relation("OrderDriver")
+  drivenDrops  Drop[]  @relation("DropDriver")
+
+  @@index([active])
+}
+
+model Role {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles RolePermission[]
+}
+
+/// Join table: which permissions a role grants. Cascades because it carries no
+/// history of its own.
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  createdAt DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+}
+
+// ---------------------------------------------------------------------------
+// Reference data (admin managed)
+// ---------------------------------------------------------------------------
+
+model Allergen {
+  id     String  @id @default(uuid())
+  code   String  @unique
+  name   String  @unique
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dishes            DishAllergen[]
+  options           OptionAllergen[]
+  customerEmployees CustomerEmployeeAllergen[]
+}
+
+model DietaryTag {
+  id     String  @id @default(uuid())
+  code   String  @unique
+  name   String  @unique
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dishes            DishDietaryTag[]
+  options           OptionDietaryTag[]
+  customerEmployees CustomerEmployeeDietaryTag[]
+}
+
+model KitchenStation {
+  id        String  @id @default(uuid())
+  code      String  @unique
+  name      String  @unique
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dishes     Dish[]
+  orderLines OrderLine[]
+  prepUnits  PrepUnit[]
+}
+
+model PackagingType {
+  id     String  @id @default(uuid())
+  code   String  @unique
+  name   String  @unique
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+  companies Company[] @relation("CompanyDefaultPackaging")
+}
+
+model PortionSize {
+  id        String  @id @default(uuid())
+  code      String  @unique
+  name      String  @unique
+  sortOrder Int     @default(0)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dishes  Dish[]
+  options Option[]
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+/// File metadata lives in PostgreSQL. `data` holds the bytes for the
+/// database-backed storage mode (`FILE_STORAGE=db`); an external storage mode
+/// would leave it null and rely on `storageKey`.
+model DbFile {
+  id               String  @id @default(uuid())
+  storageKey       String  @unique
+  filename         String
+  mimeType         String
+  sizeBytes        Int
+  checksum         String?
+  data             Bytes?
+  uploadedByUserId String?
+
+  createdAt DateTime @default(now())
+
+  uploadedBy          User?   @relation("DbFileUploader", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  dishImages          Dish[]  @relation("DishImage")
+  orderDeliveryPhotos Order[] @relation("OrderDeliveryPhoto")
+  dropDeliveryPhotos  Drop[]  @relation("DropDeliveryPhoto")
+
+  @@index([uploadedByUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+/// A sellable dish. `costCents` is the internal cost; customer-facing prices
+/// live in `DishTierPrice`. Dishes are deactivated, never hard deleted, so
+/// historical orders keep a valid traceability foreign key.
+model Dish {
+  id               String          @id @default(uuid())
+  sku              String          @unique
+  name             String
+  description      String?
+  temperature      DishTemperature
+  costCents        Int
+  kitchenStationId String
+  portionSizeId    String?
+  imageFileId      String?
+  /// Optional minimum order quantity per order line.
+  moq              Int?
+  active           Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  kitchenStation    KitchenStation      @relation(fields: [kitchenStationId], references: [id], onDelete: Restrict)
+  portionSize       PortionSize?        @relation(fields: [portionSizeId], references: [id], onDelete: Restrict)
+  imageFile         DbFile?             @relation("DishImage", fields: [imageFileId], references: [id], onDelete: SetNull)
+  allergens         DishAllergen[]
+  dietaryTags       DishDietaryTag[]
+  optionGroups      DishOptionGroup[]
+  tierPrices        DishTierPrice[]
+  menuCategories    MenuCategoryDish[]
+  hiddenByCompanies CompanyHiddenDish[]
+  orderLines        OrderLine[]
+
+  @@index([active])
+  @@index([kitchenStationId])
+  @@index([name])
+}
+
+model DishAllergen {
+  id         String @id @default(uuid())
+  dishId     String
+  allergenId String
+
+  dish     Dish     @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  allergen Allergen @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+
+  @@unique([dishId, allergenId])
+  @@index([allergenId])
+}
+
+model DishDietaryTag {
+  id           String @id @default(uuid())
+  dishId       String
+  dietaryTagId String
+
+  dish       Dish       @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  dietaryTag DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+
+  @@unique([dishId, dietaryTagId])
+  @@index([dietaryTagId])
+}
+
+/// A reusable add-on/choice (for example "Extra paneer", "No onion").
+model Option {
+  id            String  @id @default(uuid())
+  code          String  @unique
+  name          String
+  description   String?
+  costCents     Int     @default(0)
+  portionSizeId String?
+  active        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  portionSize        PortionSize?        @relation(fields: [portionSizeId], references: [id], onDelete: Restrict)
+  allergens          OptionAllergen[]
+  dietaryTags        OptionDietaryTag[]
+  groups             OptionGroupOption[]
+  tierPrices         OptionTierPrice[]
+  combinationOptions CombinationOption[]
+
+  @@index([active])
+}
+
+model OptionAllergen {
+  id         String @id @default(uuid())
+  optionId   String
+  allergenId String
+
+  option   Option   @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  allergen Allergen @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, allergenId])
+  @@index([allergenId])
+}
+
+model OptionDietaryTag {
+  id           String @id @default(uuid())
+  optionId     String
+  dietaryTagId String
+
+  option     Option     @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  dietaryTag DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, dietaryTagId])
+  @@index([dietaryTagId])
+}
+
+/// A reusable group of options ("Spice level", "Bread choice").
+model OptionGroup {
+  id           String  @id @default(uuid())
+  code         String  @unique
+  name         String  @unique
+  /// Default requiredness; a dish may override it on `DishOptionGroup`.
+  required     Boolean @default(false)
+  displayOrder Int     @default(0)
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  options            OptionGroupOption[]
+  dishes             DishOptionGroup[]
+  combinationOptions CombinationOption[]
+}
+
+/// Membership of an option in a group, with display ordering.
+model OptionGroupOption {
+  id            String  @id @default(uuid())
+  optionGroupId String
+  optionId      String
+  displayOrder  Int     @default(0)
+  active        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  optionGroup OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  option      Option      @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionGroupId, optionId])
+  @@index([optionId])
+}
+
+/// Which option groups apply to which dish. Option groups are reusable but not
+/// globally applicable, so the dish/group link is explicit.
+model DishOptionGroup {
+  id            String   @id @default(uuid())
+  dishId        String
+  optionGroupId String
+  displayOrder  Int      @default(0)
+  /// Overrides `OptionGroup.required` for this dish when set.
+  required      Boolean?
+  active        Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dish        Dish        @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  optionGroup OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([dishId, optionGroupId])
+  @@index([optionGroupId])
+}
+
+// ---------------------------------------------------------------------------
+// Pricing
+// ---------------------------------------------------------------------------
+
+/// A named price list. Exactly one tier must be the default; that rule needs a
+/// PostgreSQL partial unique index (see prisma/sql/postgres_constraints.sql).
+model PriceTier {
+  id                String          @id @default(uuid())
+  code              String          @unique
+  name              String          @unique
+  isDefault         Boolean         @default(false)
+  /// Intent for prices that are not stored explicitly, e.g.
+  /// COST_MULTIPLIER with 24000 basis points = cost x 2.4,
+  /// BASE_MARKUP with 1500 basis points = base + 15%.
+  strategy          PricingStrategy @default(EXPLICIT)
+  markupBasisPoints Int?
+  active            Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companies    Company[]
+  dishPrices   DishTierPrice[]
+  optionPrices OptionTierPrice[]
+  orders       Order[]
+}
+
+/// Explicit price of a dish in a tier. A missing row means "no explicit price
+/// for this tier"; the tier strategy decides what happens later.
+model DishTierPrice {
+  id          String @id @default(uuid())
+  dishId      String
+  priceTierId String
+  priceCents  Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dish      Dish      @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  priceTier PriceTier @relation(fields: [priceTierId], references: [id], onDelete: Restrict)
+
+  @@unique([dishId, priceTierId])
+  @@index([priceTierId])
+}
+
+model OptionTierPrice {
+  id          String @id @default(uuid())
+  optionId    String
+  priceTierId String
+  priceCents  Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  option    Option    @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  priceTier PriceTier @relation(fields: [priceTierId], references: [id], onDelete: Restrict)
+
+  @@unique([optionId, priceTierId])
+  @@index([priceTierId])
+}
+
+// ---------------------------------------------------------------------------
+// Companies (customers)
+// ---------------------------------------------------------------------------
+
+model Company {
+  id                     String    @id @default(uuid())
+  name                   String
+  legalName              String?
+  priceTierId            String
+  /// Billing contact details, kept on the company itself.
+  billingContactName     String?
+  billingContactEmail    String?
+  billingContactPhone    String?
+  /// The customer employee who owns/administers this company account.
+  ownerEmployeeId        String?   @unique
+  /// Delivery defaults used when an order does not specify its own.
+  defaultAddressId       String?   @unique
+  defaultDeliveryTime    DateTime? @db.Time(0)
+  defaultPackagingTypeId String?
+  active                 Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  priceTier        PriceTier         @relation(fields: [priceTierId], references: [id], onDelete: Restrict)
+  owner            CustomerEmployee? @relation("CompanyOwner", fields: [ownerEmployeeId], references: [id], onDelete: SetNull)
+  defaultAddress   CompanyAddress?   @relation("CompanyDefaultAddress", fields: [defaultAddressId], references: [id], onDelete: SetNull)
+  defaultPackaging PackagingType?    @relation("CompanyDefaultPackaging", fields: [defaultPackagingTypeId], references: [id], onDelete: Restrict)
+
+  domains          CompanyDomain[]
+  addresses        CompanyAddress[]        @relation("CompanyAddresses")
+  holidays         CompanyHoliday[]
+  workingDays      CompanyWorkingDay[]
+  employees        CustomerEmployee[]      @relation("CompanyEmployees")
+  hiddenCategories CompanyHiddenCategory[]
+  hiddenDishes     CompanyHiddenDish[]
+  orders           Order[]
+  drops            Drop[]
+  invoices         Invoice[]
+  credits          OrderCredit[]
+
+  @@index([priceTierId])
+  @@index([active])
+}
+
+/// Email domains that map a signing-up person to a company.
+model CompanyDomain {
+  id        String @id @default(uuid())
+  companyId String
+  /// Stored lowercase, globally unique: a domain belongs to one company.
+  domain    String @unique
+
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+model CompanyAddress {
+  id            String  @id @default(uuid())
+  companyId     String
+  label         String
+  line1         String
+  line2         String?
+  city          String
+  state         String?
+  postalCode    String
+  country       String  @default("IN")
+  deliveryNotes String?
+  active        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company           Company  @relation("CompanyAddresses", fields: [companyId], references: [id], onDelete: Cascade)
+  defaultForCompany Company? @relation("CompanyDefaultAddress")
+  orders            Order[]
+  drops             Drop[]
+
+  @@index([companyId, active])
+}
+
+/// A day on which the company cannot receive deliveries.
+model CompanyHoliday {
+  id        String   @id @default(uuid())
+  companyId String
+  date      DateTime @db.Date
+  name      String?
+
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, date])
+  @@index([date])
+}
+
+/// Weekdays on which the company can receive deliveries (its receiving
+/// calendar). This is NOT the kitchen's working calendar.
+model CompanyWorkingDay {
+  id        String  @id @default(uuid())
+  companyId String
+  weekday   Weekday
+
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, weekday])
+}
+
+// ---------------------------------------------------------------------------
+// Kitchen calendar - deliberately separate from the company calendar.
+// Used later by cutoff processing; no business rules are encoded here.
+// ---------------------------------------------------------------------------
+
+model KitchenWorkingDay {
+  id      String  @id @default(uuid())
+  weekday Weekday @unique
+
+  createdAt DateTime @default(now())
+}
+
+model KitchenHoliday {
+  id   String   @id @default(uuid())
+  date DateTime @unique @db.Date
+  name String?
+
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Customer employees (people inside a customer company)
+// ---------------------------------------------------------------------------
+
+model CustomerEmployee {
+  id                    String  @id @default(uuid())
+  companyId             String
+  email                 String  @unique
+  fullName              String
+  phone                 String?
+  /// Free-text notes in addition to the structured allergen/dietary links.
+  allergyNotes          String?
+  dietaryNotes          String?
+  /// Per-employee permission flags for what they may choose on an order.
+  canChooseAddress      Boolean @default(false)
+  canChooseDeliveryTime Boolean @default(false)
+  canChoosePackaging    Boolean @default(false)
+  active                Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company      Company                      @relation("CompanyEmployees", fields: [companyId], references: [id], onDelete: Restrict)
+  ownedCompany Company?                     @relation("CompanyOwner")
+  allergens    CustomerEmployeeAllergen[]
+  dietaryTags  CustomerEmployeeDietaryTag[]
+  orders       Order[]
+  orderEvents  OrderEvent[]                 @relation("OrderEventActorEmployee")
+
+  @@index([companyId, active])
+}
+
+model CustomerEmployeeAllergen {
+  id                 String @id @default(uuid())
+  customerEmployeeId String
+  allergenId         String
+
+  customerEmployee CustomerEmployee @relation(fields: [customerEmployeeId], references: [id], onDelete: Cascade)
+  allergen         Allergen         @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+
+  @@unique([customerEmployeeId, allergenId])
+  @@index([allergenId])
+}
+
+model CustomerEmployeeDietaryTag {
+  id                 String @id @default(uuid())
+  customerEmployeeId String
+  dietaryTagId       String
+
+  customerEmployee CustomerEmployee @relation(fields: [customerEmployeeId], references: [id], onDelete: Cascade)
+  dietaryTag       DietaryTag       @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+
+  @@unique([customerEmployeeId, dietaryTagId])
+  @@index([dietaryTagId])
+}
+
+// ---------------------------------------------------------------------------
+// Menu
+// ---------------------------------------------------------------------------
+
+/// A menu section. `isSecret` categories are not listed in the normal menu but
+/// stay reachable by direct reference.
+model MenuCategory {
+  id           String  @id @default(uuid())
+  slug         String  @unique
+  name         String  @unique
+  displayOrder Int     @default(0)
+  isSecret     Boolean @default(false)
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dishes            MenuCategoryDish[]
+  hiddenByCompanies CompanyHiddenCategory[]
+
+  @@index([active, displayOrder])
+}
+
+model MenuCategoryDish {
+  id             String  @id @default(uuid())
+  menuCategoryId String
+  dishId         String
+  displayOrder   Int     @default(0)
+  active         Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menuCategory MenuCategory @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+  dish         Dish         @relation(fields: [dishId], references: [id], onDelete: Restrict)
+
+  @@unique([menuCategoryId, dishId])
+  @@index([dishId])
+  @@index([menuCategoryId, displayOrder])
+}
+
+/// Company-specific hiding of a whole category.
+model CompanyHiddenCategory {
+  id             String @id @default(uuid())
+  companyId      String
+  menuCategoryId String
+
+  createdAt DateTime @default(now())
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  menuCategory MenuCategory @relation(fields: [menuCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, menuCategoryId])
+  @@index([menuCategoryId])
+}
+
+/// Company-specific hiding of a single dish.
+model CompanyHiddenDish {
+  id        String @id @default(uuid())
+  companyId String
+  dishId    String
+
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dish    Dish    @relation(fields: [dishId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, dishId])
+  @@index([dishId])
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+//
+// Order -> OrderLine -> OrderCombination -> CombinationOption form one
+// aggregate: the children cascade with their parent (so a draft can be
+// rebuilt), while every link out to the catalogue is `Restrict` and duplicated
+// as snapshot columns.
+// ---------------------------------------------------------------------------
+
+model Order {
+  id                 String      @id @default(uuid())
+  orderNumber        String      @unique
+  companyId          String
+  customerEmployeeId String
+  status             OrderStatus @default(DRAFT)
+
+  deliveryDate DateTime @db.Date
+  deliveryTime DateTime @db.Time(0)
+
+  deliveryAddressId         String
+  /// Address snapshot: the order must still show where it was sent even if the
+  /// company edits or deactivates the address later.
+  deliveryAddressLabel      String
+  deliveryAddressLine1      String
+  deliveryAddressLine2      String?
+  deliveryAddressCity       String
+  deliveryAddressState      String?
+  deliveryAddressPostalCode String
+  deliveryAddressCountry    String
+
+  packagingTypeId   String?
+  packagingTypeName String?
+
+  /// Price tier used when the order was priced, plus its name at that moment.
+  priceTierId   String
+  priceTierName String
+
+  subtotalCents Int @default(0)
+  totalCents    Int @default(0)
+
+  driverStaffId       String?
+  deliveryPhotoFileId String?
+  deliveryNotes       String?
+  customerNotes       String?
+
+  /// Cutoff processing state (the algorithm itself is a later step).
+  cutoffRunId       String?
+  cutoffProcessedAt DateTime?
+
+  placedAt        DateTime?
+  confirmedAt     DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  cancelledAt     DateTime?
+  deliveredAt     DateTime?
+
+  /// Optimistic concurrency token; services bump it on every write.
+  version Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  customerEmployee CustomerEmployee @relation(fields: [customerEmployeeId], references: [id], onDelete: Restrict)
+  deliveryAddress  CompanyAddress   @relation(fields: [deliveryAddressId], references: [id], onDelete: Restrict)
+  packagingType    PackagingType?   @relation(fields: [packagingTypeId], references: [id], onDelete: Restrict)
+  priceTier        PriceTier        @relation(fields: [priceTierId], references: [id], onDelete: Restrict)
+  driver           Staff?           @relation("OrderDriver", fields: [driverStaffId], references: [id], onDelete: Restrict)
+  deliveryPhoto    DbFile?          @relation("OrderDeliveryPhoto", fields: [deliveryPhotoFileId], references: [id], onDelete: SetNull)
+  cutoffRun        CutoffRun?       @relation(fields: [cutoffRunId], references: [id], onDelete: Restrict)
+
+  lines       OrderLine[]
+  events      OrderEvent[]
+  prepUnits   PrepUnit[]
+  dropOrder   DropOrder?
+  credits     OrderCredit[] @relation("OrderCredits")
+  /// At most one invoice line may reference an order (`InvoiceLine.orderId` is
+  /// unique), so an order is billed at most once.
+  invoiceLine InvoiceLine?  @relation("InvoiceLineOrder")
+
+  @@index([companyId, deliveryDate])
+  @@index([deliveryDate, status])
+  @@index([status])
+  @@index([customerEmployeeId])
+  @@index([createdAt])
+  @@index([driverStaffId])
+  @@index([cutoffRunId])
+}
+
+/// One ordered dish, with everything needed to reprint the order later.
+model OrderLine {
+  id      String  @id @default(uuid())
+  orderId String
+  /// Traceability only - never the source of truth for historical display.
+  dishId  String?
+
+  /// Dish snapshot.
+  dishName        String
+  dishSku         String
+  dishDescription String?
+  dishTemperature DishTemperature
+
+  /// Station snapshot: where this dish was routed when the order was placed.
+  kitchenStationId   String?
+  kitchenStationCode String
+  kitchenStationName String
+
+  quantity       Int
+  unitPriceCents Int
+  lineTotalCents Int
+  displayOrder   Int     @default(0)
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order          Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dish           Dish?              @relation(fields: [dishId], references: [id], onDelete: Restrict)
+  kitchenStation KitchenStation?    @relation(fields: [kitchenStationId], references: [id], onDelete: Restrict)
+  combinations   OrderCombination[]
+
+  @@index([orderId])
+  @@index([dishId])
+}
+
+/// A distinct option combination inside an order line, and the unit the
+/// kitchen prepares. The combination quantities of a line must sum to the line
+/// quantity - that invariant is enforced by the service layer, not by a CHECK.
+model OrderCombination {
+  id          String @id @default(uuid())
+  orderLineId String
+
+  quantity          Int
+  /// Dish unit price plus the selected options, at order time.
+  unitPriceCents    Int
+  optionsPriceCents Int @default(0)
+  totalCents        Int
+
+  /// Deterministic fingerprint of the selected option ids, used to keep
+  /// combinations distinct within a line.
+  signature String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderLine OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  options   CombinationOption[]
+  prepUnit  PrepUnit?
+
+  @@unique([orderLineId, signature])
+  @@index([orderLineId])
+}
+
+/// One selected option inside a combination, snapshotted.
+model CombinationOption {
+  id                 String  @id @default(uuid())
+  orderCombinationId String
+  optionId           String?
+  optionGroupId      String?
+
+  optionGroupName  String
+  optionName       String
+  optionPriceCents Int
+
+  createdAt DateTime @default(now())
+
+  orderCombination OrderCombination @relation(fields: [orderCombinationId], references: [id], onDelete: Cascade)
+  option           Option?          @relation(fields: [optionId], references: [id], onDelete: Restrict)
+  optionGroup      OptionGroup?     @relation(fields: [optionGroupId], references: [id], onDelete: Restrict)
+
+  @@unique([orderCombinationId, optionId])
+  @@index([orderCombinationId])
+  @@index([optionId])
+}
+
+/// Progress timeline of an order. Not a general audit log: it records the
+/// business milestones an order passes through.
+model OrderEvent {
+  id                      String              @id @default(uuid())
+  orderId                 String
+  type                    OrderEventType
+  actorType               OrderEventActorType @default(SYSTEM)
+  actorUserId             String?
+  actorCustomerEmployeeId String?
+  note                    String?
+  occurredAt              DateTime            @default(now())
+
+  order         Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actorUser     User?             @relation("OrderEventActorUser", fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmployee CustomerEmployee? @relation("OrderEventActorEmployee", fields: [actorCustomerEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, occurredAt])
+  @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// Kitchen
+// ---------------------------------------------------------------------------
+
+/// The physical preparation unit generated from an order combination.
+/// One row per combination keeps generation idempotent.
+model PrepUnit {
+  id                 String @id @default(uuid())
+  orderId            String
+  orderCombinationId String @unique
+
+  /// Station snapshot: the station this unit was routed to. If the dish moves
+  /// to another station later, history stays correct.
+  kitchenStationId   String?
+  kitchenStationCode String
+  kitchenStationName String
+  dishName           String
+
+  quantity Int
+  status   PrepUnitStatus @default(PENDING)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order            Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderCombination OrderCombination @relation(fields: [orderCombinationId], references: [id], onDelete: Cascade)
+  kitchenStation   KitchenStation?  @relation(fields: [kitchenStationId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([kitchenStationId, status])
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------------------
+// Delivery
+// ---------------------------------------------------------------------------
+
+/// A delivery drop: orders for the same company, address and exact delivery
+/// time travel together. The composite unique key below makes that grouping
+/// identifiable and safe under concurrency; the rule about which orders may
+/// join a drop is service-layer logic.
+model Drop {
+  id                  String     @id @default(uuid())
+  companyId           String
+  companyAddressId    String
+  deliveryDate        DateTime   @db.Date
+  deliveryTime        DateTime   @db.Time(0)
+  status              DropStatus @default(PENDING)
+  driverStaffId       String?
+  deliveryPhotoFileId String?
+  notes               String?
+
+  dispatchedAt DateTime?
+  deliveredAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company        Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  companyAddress CompanyAddress @relation(fields: [companyAddressId], references: [id], onDelete: Restrict)
+  driver         Staff?         @relation("DropDriver", fields: [driverStaffId], references: [id], onDelete: Restrict)
+  deliveryPhoto  DbFile?        @relation("DropDeliveryPhoto", fields: [deliveryPhotoFileId], references: [id], onDelete: SetNull)
+  orders         DropOrder[]
+
+  @@unique([companyId, companyAddressId, deliveryDate, deliveryTime])
+  @@index([companyId, deliveryDate])
+  @@index([deliveryDate, status])
+  @@index([status])
+  @@index([driverStaffId])
+}
+
+/// Membership of an order in a drop. An order can belong to at most one drop.
+model DropOrder {
+  id      String @id @default(uuid())
+  dropId  String
+  orderId String @unique
+
+  createdAt DateTime @default(now())
+
+  drop  Drop  @relation(fields: [dropId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([dropId])
+}
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+
+model Invoice {
+  id            String        @id @default(uuid())
+  companyId     String
+  invoiceNumber String        @unique
+  status        InvoiceStatus @default(DRAFT)
+
+  periodStart DateTime? @db.Date
+  periodEnd   DateTime? @db.Date
+  issueDate   DateTime? @db.Date
+  dueDate     DateTime? @db.Date
+
+  subtotalCents Int @default(0)
+  creditCents   Int @default(0)
+  totalCents    Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  lines   InvoiceLine[]
+
+  @@index([companyId, status])
+  @@index([status])
+  @@index([issueDate])
+  @@index([companyId, periodStart, periodEnd])
+}
+
+/// One billable line. It points at either an order or a credit (or neither,
+/// for a manual adjustment).
+///
+/// `orderId` and `orderCreditId` each carry their own single-column unique
+/// index on a nullable column: PostgreSQL treats NULLs as distinct, so this
+/// yields exactly "an order/credit may be invoiced at most once" across all
+/// invoices. A composite `@@unique([invoiceId, orderId])` would be wrong - see
+/// docs/explanation/step3.md.
+model InvoiceLine {
+  id            String          @id @default(uuid())
+  invoiceId     String
+  type          InvoiceLineType
+  orderId       String?         @unique
+  orderCreditId String?         @unique
+  description   String
+  amountCents   Int
+
+  createdAt DateTime @default(now())
+
+  invoice     Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  order       Order?       @relation("InvoiceLineOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  orderCredit OrderCredit? @relation("InvoiceLineCredit", fields: [orderCreditId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([type])
+}
+
+/// A goodwill credit owed back to a company, optionally tied to an order.
+/// Credits are intentionally all-or-nothing: one credit is consumed in full by
+/// at most one invoice line, so there is no partial-balance ledger.
+model OrderCredit {
+  id              String  @id @default(uuid())
+  companyId       String
+  orderId         String?
+  amountCents     Int
+  reason          String
+  createdByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  order       Order?       @relation("OrderCredits", fields: [orderId], references: [id], onDelete: Restrict)
+  createdBy   User?        @relation("OrderCreditCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  invoiceLine InvoiceLine? @relation("InvoiceLineCredit")
+
+  @@index([companyId])
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------------------
+// Cutoff
+// ---------------------------------------------------------------------------
+
+/// One execution of cutoff processing for a target delivery date. The unique
+/// key makes re-running the same cutoff idempotent; the algorithm (and the
+/// kitchen-vs-company calendar distinction it needs) is a later step.
+model CutoffRun {
+  id                 String          @id @default(uuid())
+  /// Business date on which the cutoff was processed.
+  processingDate     DateTime        @db.Date
+  /// Delivery date the run was processing orders for.
+  targetDeliveryDate DateTime        @db.Date
+  cutoffAt           DateTime
+  status             CutoffRunStatus @default(PENDING)
+  ordersProcessed    Int             @default(0)
+  ordersConfirmed    Int             @default(0)
+  ordersRejected     Int             @default(0)
+  failureReason      String?
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders Order[]
+
+  @@unique([processingDate, targetDeliveryDate])
+  @@index([targetDeliveryDate])
+  @@index([status])
 }
