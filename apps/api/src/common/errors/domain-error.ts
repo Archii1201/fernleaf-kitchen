@@ -6,6 +6,7 @@
  */
 export type DomainErrorKind =
   | 'validation'
+  | 'unauthorized'
   | 'not_found'
   | 'conflict'
   | 'forbidden';

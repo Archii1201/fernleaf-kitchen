@@ -7,6 +7,7 @@ import { DomainError, type DomainErrorKind } from './domain-error.js';
  */
 export const DOMAIN_ERROR_STATUS: Record<DomainErrorKind, HttpStatus> = {
   validation: HttpStatus.BAD_REQUEST,
+  unauthorized: HttpStatus.UNAUTHORIZED,
   not_found: HttpStatus.NOT_FOUND,
   conflict: HttpStatus.CONFLICT,
   forbidden: HttpStatus.FORBIDDEN,

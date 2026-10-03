@@ -3,7 +3,7 @@ packages:
   - "packages/*"
 allowBuilds:
   '@prisma/engines': false
-  '@scarf/scarf': set this to true or false
+  '@scarf/scarf': false
   esbuild: false
   prisma: false
   unrs-resolver: false

@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AUTH_COOKIE_NAME } from '../auth/auth.constants.js';
 
 /** Swagger UI path, relative to the global `/api` prefix. */
 export const SWAGGER_PATH = 'docs';
@@ -11,6 +12,11 @@ export function setupSwagger(app: INestApplication): void {
       'Internal admin API for Fernleaf Kitchen commercial kitchen operations.',
     )
     .setVersion('0.1.0')
+    .addCookieAuth(AUTH_COOKIE_NAME, {
+      type: 'apiKey',
+      in: 'cookie',
+      description: 'Session cookie issued by POST /api/auth/login.',
+    })
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
