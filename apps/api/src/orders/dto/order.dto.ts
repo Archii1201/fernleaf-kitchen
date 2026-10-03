@@ -201,3 +201,36 @@ export class ListOrdersQueryDto extends PaginationQueryDto {
     return this.pageSize ?? this.limit;
   }
 }
+
+export class AdminDeliveryTimeDto {
+  @ApiProperty({ example: '13:00' })
+  @Matches(TIME_PATTERN, { message: 'deliveryTime must be in HH:mm format' })
+  deliveryTime!: string;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(0)
+  version!: number;
+}
+
+export class AdminAddressDto {
+  @ApiProperty()
+  @IsUUID()
+  addressId!: string;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(0)
+  version!: number;
+}
+
+export class AdminPackagingDto {
+  @ApiProperty()
+  @IsUUID()
+  packagingTypeId!: string;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(0)
+  version!: number;
+}

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module.js';
+import { BillingModule } from './billing/billing.module.js';
 import { CatalogueModule } from './catalogue/catalogue.module.js';
 import { CommonModule } from './common/common.module.js';
 import { CompaniesModule } from './companies/companies.module.js';
@@ -36,6 +37,7 @@ import { StaffModule } from './staff/staff.module.js';
     FilesModule,
     MenuModule,
     OrdersModule,
+    BillingModule,
     DispatchModule,
     DriverModule,
     HealthModule,

@@ -107,6 +107,36 @@ export class InactiveEmployeeError extends ValidationDomainError {
   }
 }
 
+export class OrderNotOverridableError extends ConflictDomainError {
+  constructor(status: string) {
+    super({
+      code: 'ORDER_NOT_OVERRIDABLE',
+      message: 'Only a confirmed order can receive an admin delivery override.',
+      details: { status },
+    });
+  }
+}
+
+export class InactiveAddressError extends ValidationDomainError {
+  constructor(addressId: string) {
+    super({
+      code: 'ADDRESS_INACTIVE',
+      message: 'That delivery address is inactive.',
+      details: { addressId },
+    });
+  }
+}
+
+export class InactivePackagingError extends ValidationDomainError {
+  constructor(packagingTypeId: string) {
+    super({
+      code: 'PACKAGING_INACTIVE',
+      message: 'That packaging type is inactive.',
+      details: { packagingTypeId },
+    });
+  }
+}
+
 export class InactiveCompanyError extends ValidationDomainError {
   constructor(companyId: string) {
     super({

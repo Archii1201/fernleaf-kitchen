@@ -6,18 +6,25 @@ import { PERMISSIONS } from '../auth/permissions.js';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user.js';
 import type { PaginatedResponse } from '../common/pagination/index.js';
 import {
+  AdminAddressDto,
+  AdminDeliveryTimeDto,
+  AdminPackagingDto,
   CreateOrderDto,
   ListOrdersQueryDto,
   RejectOrderDto,
   ReplaceOrderLinesDto,
   UpdateOrderDto,
 } from './dto/order.dto.js';
+import { OrderAdminService } from './order-admin.service.js';
 import { OrdersService } from './orders.service.js';
 
 @ApiTags('orders')
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly admin: OrderAdminService,
+  ) {}
 
   @Post('quote')
   @RequirePermissions(PERMISSIONS.ORDERS_EDIT)
@@ -93,5 +100,32 @@ export class OrdersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.orders.reject(id, dto, user.id);
+  }
+
+  @Put(':id/admin/delivery-time')
+  @RequirePermissions(PERMISSIONS.ORDERS_OVERRIDE)
+  overrideDeliveryTime(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminDeliveryTimeDto,
+  ) {
+    return this.admin.overrideDeliveryTime(id, dto);
+  }
+
+  @Put(':id/admin/address')
+  @RequirePermissions(PERMISSIONS.ORDERS_OVERRIDE)
+  overrideAddress(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminAddressDto,
+  ) {
+    return this.admin.overrideAddress(id, dto);
+  }
+
+  @Put(':id/admin/packaging')
+  @RequirePermissions(PERMISSIONS.ORDERS_OVERRIDE)
+  overridePackaging(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminPackagingDto,
+  ) {
+    return this.admin.overridePackaging(id, dto);
   }
 }

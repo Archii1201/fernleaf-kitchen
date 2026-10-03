@@ -345,6 +345,25 @@ export class OrderRepository {
     return this.prisma.order.update({ where: { id }, data });
   }
 
+  async lockAndRead(
+    tx: Prisma.TransactionClient,
+    id: string,
+    expectedVersion: number,
+  ) {
+    await tx.$executeRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
+    const order = await tx.order.findUnique({ where: { id } });
+
+    if (!order) {
+      throw new OrderNotFoundError(id);
+    }
+
+    if (order.version !== expectedVersion) {
+      throw new OrderVersionConflictError(expectedVersion, order.version);
+    }
+
+    return order;
+  }
+
   addEvent(data: Prisma.OrderEventCreateInput) {
     return this.prisma.orderEvent.create({ data });
   }

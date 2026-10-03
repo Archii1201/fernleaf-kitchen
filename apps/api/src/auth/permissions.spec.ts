@@ -50,9 +50,18 @@ describe('permission catalogue', () => {
     );
   });
 
-  it('reserves kitchen force-complete for Admin', () => {
+  it('reserves kitchen force-complete and order overrides for Admin', () => {
     expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).not.toContain(
       PERMISSIONS.KITCHEN_FORCE_COMPLETE,
+    );
+    expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).not.toContain(
+      PERMISSIONS.ORDERS_OVERRIDE,
+    );
+    expect(ROLE_PERMISSIONS[ROLES.DISPATCH]).not.toContain(
+      PERMISSIONS.ORDERS_OVERRIDE,
+    );
+    expect(ROLE_PERMISSIONS[ROLES.DISPATCH]).not.toContain(
+      PERMISSIONS.BILLING_MANAGE,
     );
   });
 

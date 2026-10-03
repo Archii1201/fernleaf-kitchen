@@ -6,6 +6,7 @@ import { CutoffPolicy } from './domain/cutoff-policy.js';
 import { DeliveryResolver } from './domain/delivery-resolver.js';
 import { OrderBuilder } from './domain/order-builder.js';
 import { OrderPricer } from './domain/order-pricer.js';
+import { OrderAdminService } from './order-admin.service.js';
 import { OrderRepository } from './order.repository.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
@@ -20,6 +21,7 @@ import { OrdersService } from './orders.service.js';
     OrderBuilder,
     OrderRepository,
     OrdersService,
+    OrderAdminService,
   ],
   exports: [OrdersService, OrderBuilder, CutoffPolicy],
 })

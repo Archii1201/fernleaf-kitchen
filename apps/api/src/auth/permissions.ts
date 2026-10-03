@@ -9,6 +9,7 @@ export const PERMISSIONS = {
   ORDERS_VIEW: 'orders.view',
   ORDERS_EDIT: 'orders.edit',
   ORDERS_CONFIRM: 'orders.confirm',
+  ORDERS_OVERRIDE: 'orders.override',
 
   CATALOGUE_VIEW: 'catalogue.view',
   CATALOGUE_MANAGE: 'catalogue.manage',
