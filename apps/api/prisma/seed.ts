@@ -626,16 +626,17 @@ async function upsertSeedCompany(
   });
 
   const company = existingDomain
-    ? await prisma.company.update({
-        where: { id: existingDomain.companyId },
-        data: {
-          name: input.name,
-          legalName: input.legalName,
-          billingContactName: input.billingContactName,
-          billingContactEmail: input.billingContactEmail,
-        },
-        select: { id: true, ownerEmployeeId: true },
-      })
+  ? await prisma.company.update({
+      where: { id: existingDomain.companyId },
+      data: {
+        name: input.name,
+        legalName: input.legalName,
+        priceTierId: input.priceTierId,
+        billingContactName: input.billingContactName,
+        billingContactEmail: input.billingContactEmail,
+      },
+      select: { id: true, ownerEmployeeId: true },
+    })
     : await prisma.company.create({
         data: {
           name: input.name,
@@ -758,6 +759,84 @@ async function upsertSeedEmployee(
   return employee;
 }
 
+/**
+ * Menu sections the resolver browses. `off-menu` is secret: omitted from the
+ * normal listing, reachable by slug. The seasonal special is left unpriced
+ * on Standard so the missing-price path is real.
+ */
+const SAMPLE_CATEGORIES = [
+  {
+    slug: 'mains',
+    name: 'Mains',
+    displayOrder: 0,
+    isSecret: false,
+    dishSkus: ['FK-CURRY-001', 'FK-WRAP-001'],
+  },
+  {
+    slug: 'salads',
+    name: 'Salads',
+    displayOrder: 1,
+    isSecret: false,
+    dishSkus: ['FK-SALAD-001'],
+  },
+  {
+    slug: 'off-menu',
+    name: 'Off menu',
+    displayOrder: 2,
+    isSecret: true,
+    dishSkus: ['FK-SPECIAL-001'],
+  },
+];
+
+export async function seedMenu(prisma: SeedClient): Promise<void> {
+  for (const category of SAMPLE_CATEGORIES) {
+    const saved = await prisma.menuCategory.upsert({
+      where: { slug: category.slug },
+      update: {
+        name: category.name,
+        displayOrder: category.displayOrder,
+        isSecret: category.isSecret,
+        active: true,
+      },
+      create: {
+        slug: category.slug,
+        name: category.name,
+        displayOrder: category.displayOrder,
+        isSecret: category.isSecret,
+        active: true,
+      },
+      select: { id: true },
+    });
+
+    for (const [index, sku] of category.dishSkus.entries()) {
+      const dish = await prisma.dish.findUnique({
+        where: { sku },
+        select: { id: true },
+      });
+
+      if (!dish) {
+        continue;
+      }
+
+      await prisma.menuCategoryDish.upsert({
+        where: {
+          menuCategoryId_dishId: {
+            menuCategoryId: saved.id,
+            dishId: dish.id,
+          },
+        },
+        update: { displayOrder: index, active: true },
+        create: {
+          menuCategoryId: saved.id,
+          dishId: dish.id,
+          displayOrder: index,
+          active: true,
+        },
+      });
+    }
+  }
+}
+
 export function createSeedClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
 
@@ -776,6 +855,7 @@ async function main(): Promise<void> {
     await seedKitchenSettings(prisma);
     await seedReferenceData(prisma);
     await seedCatalogueSamples(prisma);
+    await seedMenu(prisma);
     await seedPricing(prisma);
     await seedCompanies(prisma);
     console.log(

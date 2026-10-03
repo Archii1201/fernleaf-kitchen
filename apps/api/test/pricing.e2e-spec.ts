@@ -6,6 +6,7 @@ import { AUTH_COOKIE_NAME } from '../src/auth/auth.constants.js';
 import { configureApp } from '../src/bootstrap.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { SEED_PASSWORD } from '../prisma/seed.js';
+import { restoreSeededStandardDishPrices } from './restore-seeded-prices.js';
 
 const SUFFIX = Date.now();
 const NEW_TIER_CODE = `STEP8-${SUFFIX}`;
@@ -72,6 +73,8 @@ describe('Pricing (e2e)', () => {
         select: { id: true },
       })
     ).id;
+
+    await restoreSeededStandardDishPrices(prisma);
   });
 
   afterAll(async () => {
@@ -79,13 +82,24 @@ describe('Pricing (e2e)', () => {
       await prisma.priceTier.deleteMany({ where: { id: createdTierId } });
     }
 
-    // Leave the seeded grid exactly as the seed defines it.
-    await prisma.dishTierPrice.deleteMany({
-      where: { priceTierId: enterpriseTierId, dishId: pricedDishId },
-    });
-    await prisma.dishTierPrice.deleteMany({
-      where: { priceTierId: standardTierId, dishId: unpricedDishId },
-    });
+    if (standardTierId) {
+      await prisma.priceTier.updateMany({
+        where: { isDefault: true },
+        data: { isDefault: false },
+      });
+      await prisma.priceTier.update({
+        where: { id: standardTierId },
+        data: { isDefault: true },
+      });
+    }
+
+    if (enterpriseTierId && pricedDishId) {
+      await prisma.dishTierPrice.deleteMany({
+        where: { priceTierId: enterpriseTierId, dishId: pricedDishId },
+      });
+    }
+
+    await restoreSeededStandardDishPrices(prisma);
     await app.close();
   });
 
@@ -413,6 +427,8 @@ describe('Pricing (e2e)', () => {
         missing: false,
         effectivePriceCents: 1_575,
       });
+
+      await restoreSeededStandardDishPrices(prisma);
     });
 
     it('rejects a negative price', async () => {

@@ -14,6 +14,7 @@ export const PERMISSIONS = {
   CATALOGUE_MANAGE: 'catalogue.manage',
   PRICING_VIEW: 'pricing.view',
   PRICING_MANAGE: 'pricing.manage',
+  MENU_VIEW: 'menu.view',
   MENU_MANAGE: 'menu.manage',
 
   COMPANIES_VIEW: 'companies.view',
@@ -73,6 +74,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly PermissionKey[]> = {
     // but pricing decisions stay with Admin (`pricing.manage`).
     PERMISSIONS.CATALOGUE_VIEW,
     PERMISSIONS.PRICING_VIEW,
+    PERMISSIONS.MENU_VIEW,
   ],
   [ROLES.DISPATCH]: [
     PERMISSIONS.PROFILE_READ,

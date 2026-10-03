@@ -49,6 +49,18 @@ describe('permission catalogue', () => {
     );
   });
 
+  it('lets Kitchen read the resolved menu but never manage it', () => {
+    expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).toContain(PERMISSIONS.MENU_VIEW);
+
+    for (const [roleName, permissions] of Object.entries(ROLE_PERMISSIONS)) {
+      if (roleName === ROLES.ADMIN) {
+        continue;
+      }
+
+      expect(permissions).not.toContain(PERMISSIONS.MENU_MANAGE);
+    }
+  });
+
   it('lets Kitchen read pricing but never change it', () => {
     expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).toContain(PERMISSIONS.PRICING_VIEW);
 

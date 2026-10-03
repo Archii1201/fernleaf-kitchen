@@ -7,5 +7,8 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
+    // One shared Postgres. Parallel files race on DishTierPrice / defaults.
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });

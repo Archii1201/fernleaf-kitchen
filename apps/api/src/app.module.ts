@@ -7,6 +7,7 @@ import { CompaniesModule } from './companies/companies.module.js';
 import { validateEnv } from './config/env.validation.js';
 import { EmployeesModule } from './employees/employees.module.js';
 import { KitchenModule } from './kitchen/kitchen.module.js';
+import { MenuModule } from './menu/menu.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -28,6 +29,7 @@ import { StaffModule } from './staff/staff.module.js';
     PricingModule,
     CompaniesModule,
     EmployeesModule,
+    MenuModule,
     HealthModule,
   ],
 })
