@@ -27,6 +27,7 @@ import type {
 
 /** The settings table holds exactly one row, pinned by a CHECK constraint. */
 export const SETTINGS_ID = 'singleton';
+export const DEFAULT_DELIVERY_GRACE_MINUTES = 15;
 
 export interface CutoffConfig {
   cutoffTime: string;
@@ -53,6 +54,8 @@ export class SettingsService {
     return {
       cutoffTime: this.kitchenTime.toTimeString(settings.cutoffTime),
       cutoffWorkingDays: settings.cutoffWorkingDays,
+      deliveryGraceMinutes:
+        settings.deliveryGraceMinutes ?? DEFAULT_DELIVERY_GRACE_MINUTES,
       workingDays: this.sortWeekdays(
         workingDays.map((row) => row.weekday as Weekday),
       ),
@@ -79,6 +82,15 @@ export class SettingsService {
     };
   }
 
+  async getDeliveryGraceMinutes(): Promise<number> {
+    const settings = await this.prisma.kitchenSettings.findUnique({
+      where: { id: SETTINGS_ID },
+      select: { deliveryGraceMinutes: true },
+    });
+
+    return settings?.deliveryGraceMinutes ?? DEFAULT_DELIVERY_GRACE_MINUTES;
+  }
+
   /**
    * Replaces the cutoff configuration and the kitchen working week in one
    * transaction: a half-applied calendar would silently move every cutoff.
@@ -92,11 +104,19 @@ export class SettingsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.kitchenSettings.upsert({
         where: { id: SETTINGS_ID },
-        update: { cutoffTime, cutoffWorkingDays: dto.cutoffWorkingDays },
+        update: {
+          cutoffTime,
+          cutoffWorkingDays: dto.cutoffWorkingDays,
+          ...(dto.deliveryGraceMinutes === undefined
+            ? {}
+            : { deliveryGraceMinutes: dto.deliveryGraceMinutes }),
+        },
         create: {
           id: SETTINGS_ID,
           cutoffTime,
           cutoffWorkingDays: dto.cutoffWorkingDays,
+          deliveryGraceMinutes:
+            dto.deliveryGraceMinutes ?? DEFAULT_DELIVERY_GRACE_MINUTES,
         },
       });
 

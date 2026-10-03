@@ -214,10 +214,10 @@ describe('Authentication and RBAC (e2e)', () => {
         .expect(200);
 
       expect(profile.body.permissions.sort()).toEqual([
-        'delivery.update',
-        'delivery.view',
-        'profile.read',
-      ]);
+  'driver.update',
+  'driver.view',
+  'profile.read',
+]);
     });
   });
 

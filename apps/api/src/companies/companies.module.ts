@@ -7,6 +7,6 @@ import { DriverEligibilityService } from './domain/driver-eligibility.service.js
   controllers: [CompaniesController],
   providers: [CompaniesService, DriverEligibilityService],
   // EmployeesModule reuses the company lookup and the approved-domain list.
-  exports: [CompaniesService],
+  exports: [CompaniesService, DriverEligibilityService],
 })
 export class CompaniesModule {}

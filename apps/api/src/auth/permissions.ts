@@ -29,9 +29,8 @@ export const PERMISSIONS = {
 
   DISPATCH_VIEW: 'dispatch.view',
   DISPATCH_MANAGE: 'dispatch.manage',
-
-  DELIVERY_VIEW: 'delivery.view',
-  DELIVERY_UPDATE: 'delivery.update',
+DRIVER_VIEW: 'driver.view',
+DRIVER_UPDATE: 'driver.update',
 
   BILLING_VIEW: 'billing.view',
   BILLING_MANAGE: 'billing.manage',
@@ -86,13 +85,12 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly PermissionKey[]> = {
     PERMISSIONS.ORDERS_VIEW,
     PERMISSIONS.DISPATCH_VIEW,
     PERMISSIONS.DISPATCH_MANAGE,
-    PERMISSIONS.DELIVERY_VIEW,
     PERMISSIONS.FILES_VIEW,
   ],
   [ROLES.DRIVER]: [
     PERMISSIONS.PROFILE_READ,
-    PERMISSIONS.DELIVERY_VIEW,
-    PERMISSIONS.DELIVERY_UPDATE,
+    PERMISSIONS.DRIVER_VIEW,
+PERMISSIONS.DRIVER_UPDATE,
    
   ],
 };

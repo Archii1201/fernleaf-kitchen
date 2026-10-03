@@ -8,29 +8,50 @@ export const ORDER_STATUSES = [
   'CANCELLED',
   'IN_KITCHEN',
   'READY',
+  'DISPATCH_READY',
   'OUT_FOR_DELIVERY',
   'DELIVERED',
 ] as const;
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
-
 /**
- * Allowed transitions for this step. Kitchen/dispatch statuses exist on the
- * model but are not entered here — those steps own their own machines.
+ * Order lifecycle and operational workflow.
  *
- *   DRAFT     → PLACED | CANCELLED
- *   PLACED    → CONFIRMED | CANCELLED | REJECTED
- *   CONFIRMED → DELIVERED
+ * DRAFT
+ *   → PLACED
+ *   → CONFIRMED
+ *   → IN_KITCHEN
+ *   → READY
+ *   → DISPATCH_READY
+ *   → OUT_FOR_DELIVERY
+ *   → DELIVERED
+ *
+ * Exceptional terminal transitions:
+ *   DRAFT  → CANCELLED
+ *   PLACED → CANCELLED | REJECTED
+ *
+ * Kitchen and dispatch services own the operations that cause
+ * the corresponding workflow transitions.
  */
 const ALLOWED: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
   DRAFT: ['PLACED', 'CANCELLED'],
+
   PLACED: ['CONFIRMED', 'CANCELLED', 'REJECTED'],
-  CONFIRMED: ['IN_KITCHEN', 'READY', 'DELIVERED'],
-  REJECTED: [],
-  CANCELLED: [],
+
+  CONFIRMED: ['IN_KITCHEN'],
+
   IN_KITCHEN: ['READY'],
-  READY: [],
-  OUT_FOR_DELIVERY: [],
+
+  READY: ['DISPATCH_READY'],
+
+  DISPATCH_READY: ['OUT_FOR_DELIVERY'],
+
+  OUT_FOR_DELIVERY: ['DELIVERED'],
+
+  REJECTED: [],
+
+  CANCELLED: [],
+
   DELIVERED: [],
 };
 

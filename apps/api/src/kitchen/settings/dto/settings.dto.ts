@@ -40,6 +40,13 @@ export class UpdateSettingsDto {
   @ArrayNotEmpty({ message: 'the kitchen must work at least one weekday' })
   @IsIn(WEEKDAYS, { each: true })
   workingDays!: Weekday[];
+
+  @ApiPropertyOptional({ example: 15, minimum: 0, maximum: 180 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(180)
+  deliveryGraceMinutes?: number;
 }
 
 export class CreateHolidayDto {
@@ -66,6 +73,9 @@ export class SettingsResponse {
 
   @ApiProperty({ example: 'Asia/Kolkata' })
   timeZone!: string;
+
+  @ApiProperty({ example: 15 })
+  deliveryGraceMinutes!: number;
 
   @ApiProperty({ example: 14 })
   maxCutoffWorkingDays!: number;

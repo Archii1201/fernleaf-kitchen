@@ -69,6 +69,7 @@ describe('SettingsService', () => {
     prisma.kitchenSettings.findUnique.mockResolvedValue({
       cutoffTime: new Date('1970-01-01T16:00:00Z'),
       cutoffWorkingDays: 2,
+      deliveryGraceMinutes: 15,
       updatedAt: new Date('2026-10-01T00:00:00Z'),
     });
     prisma.kitchenWorkingDay.findMany.mockResolvedValue([
@@ -127,6 +128,7 @@ describe('SettingsService', () => {
     prisma.kitchenSettings.findUnique.mockResolvedValue({
       cutoffTime: new Date('1970-01-01T16:00:00Z'),
       cutoffWorkingDays: 2,
+      deliveryGraceMinutes: 15,
       updatedAt: new Date('2026-10-01T00:00:00Z'),
     });
     prisma.kitchenWorkingDay.findMany.mockResolvedValue(

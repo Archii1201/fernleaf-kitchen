@@ -26,7 +26,7 @@ function staffRow(overrides: {
           active: true,
           role: {
             permissions: [
-              { permission: { key: PERMISSIONS.DELIVERY_UPDATE } },
+              { permission: { key: PERMISSIONS.DRIVER_UPDATE } },
             ],
           },
         }

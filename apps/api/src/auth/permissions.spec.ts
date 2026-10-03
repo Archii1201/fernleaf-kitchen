@@ -30,7 +30,7 @@ describe('permission catalogue', () => {
       PERMISSIONS.DISPATCH_MANAGE,
     );
     expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).not.toContain(
-      PERMISSIONS.DELIVERY_UPDATE,
+      PERMISSIONS.DRIVER_UPDATE,
     );
 
     expect(ROLE_PERMISSIONS[ROLES.DISPATCH]).toContain(
@@ -39,8 +39,9 @@ describe('permission catalogue', () => {
     expect(ROLE_PERMISSIONS[ROLES.DISPATCH]).not.toContain(
       PERMISSIONS.KITCHEN_UPDATE,
     );
+    expect(ROLE_PERMISSIONS[ROLES.DISPATCH]).toContain(PERMISSIONS.DISPATCH_VIEW);
 
-    expect(ROLE_PERMISSIONS[ROLES.DRIVER]).toContain(PERMISSIONS.DELIVERY_UPDATE);
+    expect(ROLE_PERMISSIONS[ROLES.DRIVER]).toContain(PERMISSIONS.DRIVER_UPDATE);
     expect(ROLE_PERMISSIONS[ROLES.DRIVER]).not.toContain(
       PERMISSIONS.KITCHEN_UPDATE,
     );

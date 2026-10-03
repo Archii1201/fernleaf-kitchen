@@ -58,10 +58,10 @@ export class DriverEligibilityService {
       staff.user.role.permissions.map((entry) => entry.permission.key),
     );
 
-    if (!granted.has(PERMISSIONS.DELIVERY_UPDATE)) {
+    if (!granted.has(PERMISSIONS.DRIVER_UPDATE)) {
       throw new DriverNotEligibleError(
         staffId,
-        `they do not hold the "${PERMISSIONS.DELIVERY_UPDATE}" permission.`,
+        `they do not hold the "${PERMISSIONS.DRIVER_UPDATE}" permission.`,
       );
     }
   }
@@ -96,7 +96,7 @@ export class DriverEligibilityService {
     return staff
       .filter((row) =>
         row.user?.role.permissions.some(
-          (entry) => entry.permission.key === PERMISSIONS.DELIVERY_UPDATE,
+          (entry) => entry.permission.key === PERMISSIONS.DRIVER_UPDATE,
         ),
       )
       .map(({ id, staffCode, fullName }) => ({ id, staffCode, fullName }));
