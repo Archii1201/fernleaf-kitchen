@@ -49,6 +49,12 @@ describe('permission catalogue', () => {
     );
   });
 
+  it('reserves kitchen force-complete for Admin', () => {
+    expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).not.toContain(
+      PERMISSIONS.KITCHEN_FORCE_COMPLETE,
+    );
+  });
+
   it('lets Kitchen read the resolved menu but never manage it', () => {
     expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).toContain(PERMISSIONS.MENU_VIEW);
 

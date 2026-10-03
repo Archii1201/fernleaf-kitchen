@@ -10,6 +10,8 @@ describe('order state machine', () => {
     expect(canTransition('PLACED', 'CANCELLED')).toBe(true);
     expect(canTransition('PLACED', 'REJECTED')).toBe(true);
     expect(canTransition('CONFIRMED', 'DELIVERED')).toBe(true);
+    expect(canTransition('CONFIRMED', 'IN_KITCHEN')).toBe(true);
+    expect(canTransition('IN_KITCHEN', 'READY')).toBe(true);
   });
 
   it('rejects illegal jumps', () => {

@@ -25,6 +25,7 @@ export const PERMISSIONS = {
 
   KITCHEN_VIEW: 'kitchen.view',
   KITCHEN_UPDATE: 'kitchen.update',
+  KITCHEN_FORCE_COMPLETE: 'kitchen.force_complete',
 
   DISPATCH_VIEW: 'dispatch.view',
   DISPATCH_MANAGE: 'dispatch.manage',

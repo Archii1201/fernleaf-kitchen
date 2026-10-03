@@ -68,6 +68,32 @@ export class HolidayNotFoundError extends NotFoundDomainError {
   }
 }
 
+export class PrepUnitNotFoundError extends NotFoundDomainError {
+  constructor(id: string) {
+    super({
+      code: 'PREP_UNIT_NOT_FOUND',
+      message: 'Prep unit not found.',
+      details: { id },
+    });
+  }
+}
+
+export class PrepUnitConflictError extends ConflictDomainError {
+  constructor(code: string, message: string, details: Record<string, unknown> = {}) {
+    super({ code, message, details });
+  }
+}
+
+export class KitchenOrderNotWorkableError extends ConflictDomainError {
+  constructor(orderId: string, status: string) {
+    super({
+      code: 'KITCHEN_ORDER_NOT_WORKABLE',
+      message: 'Only confirmed kitchen orders can be prepared.',
+      details: { orderId, status },
+    });
+  }
+}
+
 export class DuplicateHolidayError extends ConflictDomainError {
   constructor(date: string) {
     super({

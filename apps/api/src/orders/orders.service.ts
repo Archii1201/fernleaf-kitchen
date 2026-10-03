@@ -4,6 +4,7 @@ import {
   paginate,
   type PaginatedResponse,
 } from '../common/pagination/index.js';
+import { plannedKitchenTimes } from '../kitchen/board/kitchen-timing.js';
 import { KitchenTime } from '../kitchen/time/kitchen-time.js';
 import type {
   CreateOrderDto,
@@ -142,6 +143,13 @@ export class OrdersService {
 packagingTypeName: order.delivery.packagingTypeName,
       customerNotes: order.customerNotes,
       leaveKitchenMinutes: order.delivery.leaveKitchenMinutes,
+      ...plannedKitchenTimes(
+        this.kitchenTime.combineDateAndTime(
+          order.delivery.deliveryDate,
+          order.delivery.deliveryTime,
+        ),
+        order.delivery.leaveKitchenMinutes,
+      ),
       priceTier: {
   connect: {
     id: order.priceTierId,

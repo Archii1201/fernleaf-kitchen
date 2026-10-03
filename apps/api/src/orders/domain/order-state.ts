@@ -25,10 +25,10 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 const ALLOWED: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
   DRAFT: ['PLACED', 'CANCELLED'],
   PLACED: ['CONFIRMED', 'CANCELLED', 'REJECTED'],
-  CONFIRMED: ['DELIVERED'],
+  CONFIRMED: ['IN_KITCHEN', 'READY', 'DELIVERED'],
   REJECTED: [],
   CANCELLED: [],
-  IN_KITCHEN: [],
+  IN_KITCHEN: ['READY'],
   READY: [],
   OUT_FOR_DELIVERY: [],
   DELIVERED: [],

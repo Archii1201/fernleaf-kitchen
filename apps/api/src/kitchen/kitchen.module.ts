@@ -1,5 +1,10 @@
 import { Global, Module } from '@nestjs/common';
+import { KitchenBoardController } from './board/kitchen-board.controller.js';
+import { KitchenBoardService } from './board/kitchen-board.service.js';
 import { KitchenCalendar } from './calendar/kitchen-calendar.service.js';
+import { CutoffProcessingController } from './cutoff/cutoff-processing.controller.js';
+import { CutoffProcessingService } from './cutoff/cutoff-processing.service.js';
+import { CutoffScheduler } from './cutoff/cutoff-scheduler.js';
 import { CutoffService } from './cutoff/cutoff.service.js';
 import { SettingsController } from './settings/settings.controller.js';
 import { SettingsService } from './settings/settings.service.js';
@@ -13,14 +18,28 @@ import { KitchenTime } from './time/kitchen-time.js';
  */
 @Global()
 @Module({
-  controllers: [SettingsController],
+  controllers: [
+    SettingsController,
+    CutoffProcessingController,
+    KitchenBoardController,
+  ],
   providers: [
     { provide: CLOCK, useClass: SystemClock },
     KitchenTime,
     KitchenCalendar,
     SettingsService,
     CutoffService,
+    CutoffProcessingService,
+    CutoffScheduler,
+    KitchenBoardService,
   ],
-  exports: [CLOCK, KitchenTime, KitchenCalendar, SettingsService, CutoffService],
+  exports: [
+    CLOCK,
+    KitchenTime,
+    KitchenCalendar,
+    SettingsService,
+    CutoffService,
+    CutoffProcessingService,
+  ],
 })
 export class KitchenModule {}

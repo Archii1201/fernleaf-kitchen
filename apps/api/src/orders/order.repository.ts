@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { plannedKitchenTimes } from '../kitchen/board/kitchen-timing.js';
 import { KitchenTime } from '../kitchen/time/kitchen-time.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { combinationKey } from './domain/line-diff.js';
@@ -76,6 +77,13 @@ export class OrderRepository {
           priceTierId: built.priceTierId,
           priceTierName: built.priceTierName,
           leaveKitchenMinutes: built.delivery.leaveKitchenMinutes,
+          ...plannedKitchenTimes(
+            this.kitchenTime.combineDateAndTime(
+              built.delivery.deliveryDate,
+              built.delivery.deliveryTime,
+            ),
+            built.delivery.leaveKitchenMinutes,
+          ),
           driverStaffId: built.delivery.defaultDriverStaffId,
           customerNotes: built.customerNotes,
           subtotalCents: built.subtotalCents,
