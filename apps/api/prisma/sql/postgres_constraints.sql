@@ -143,12 +143,17 @@ ALTER TABLE "Company"
   ADD CONSTRAINT "Company_leaveKitchenMinutes_range"
     CHECK ("leaveKitchenMinutes" >= 0 AND "leaveKitchenMinutes" <= 1440);
 
+ALTER TABLE "Order"
+  DROP CONSTRAINT IF EXISTS "Order_leaveKitchenMinutes_range",
+  ADD CONSTRAINT "Order_leaveKitchenMinutes_range"
+    CHECK ("leaveKitchenMinutes" >= 0 AND "leaveKitchenMinutes" <= 1440);
+
 -- ---------------------------------------------------------------------------
 -- 3. An invoice line must match its own type: an ORDER line points at an
 --    order, a CREDIT line at a credit, an ADJUSTMENT line at neither.
---    (The "at most once invoiced" rule is already enforced by the single
---    column unique indexes on the nullable "orderId"/"orderCreditId", because
---    PostgreSQL treats NULLs as distinct.)
+--    Current-billing uniqueness is Order.invoiceId / OrderCredit.invoiceId
+--    (cleared when an unpaid invoice is voided). InvoiceLine rows stay
+--    historical, so they are not unique on orderId/orderCreditId.
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE "InvoiceLine"

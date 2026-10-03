@@ -41,6 +41,9 @@ export const PERMISSIONS = {
   STAFF_VIEW: 'staff.view',
   STAFF_MANAGE: 'staff.manage',
 
+  FILES_UPLOAD: 'files.upload',
+  FILES_VIEW: 'files.view',
+
   USERS_MANAGE: 'users.manage',
   REPORTS_VIEW: 'reports.view',
 } as const;
@@ -75,6 +78,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly PermissionKey[]> = {
     PERMISSIONS.CATALOGUE_VIEW,
     PERMISSIONS.PRICING_VIEW,
     PERMISSIONS.MENU_VIEW,
+    PERMISSIONS.FILES_VIEW,
   ],
   [ROLES.DISPATCH]: [
     PERMISSIONS.PROFILE_READ,
@@ -82,10 +86,12 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly PermissionKey[]> = {
     PERMISSIONS.DISPATCH_VIEW,
     PERMISSIONS.DISPATCH_MANAGE,
     PERMISSIONS.DELIVERY_VIEW,
+    PERMISSIONS.FILES_VIEW,
   ],
   [ROLES.DRIVER]: [
     PERMISSIONS.PROFILE_READ,
     PERMISSIONS.DELIVERY_VIEW,
     PERMISSIONS.DELIVERY_UPDATE,
+   
   ],
 };

@@ -1,4 +1,5 @@
 import {
+  ConflictDomainError,
   NotFoundDomainError,
   ValidationDomainError,
 } from '../common/errors/index.js';
@@ -10,6 +11,26 @@ export class MenuCategoryNotFoundError extends NotFoundDomainError {
       code: 'MENU_CATEGORY_NOT_FOUND',
       message: 'Menu category not found.',
       details: { slug },
+    });
+  }
+}
+
+export class MenuCategoryConflictError extends ConflictDomainError {
+  constructor(field: 'slug' | 'name', value: string) {
+    super({
+      code: 'MENU_CATEGORY_ALREADY_EXISTS',
+      message: `Another menu category already uses this ${field}.`,
+      details: { field, value },
+    });
+  }
+}
+
+export class MenuCategoryIdNotFoundError extends NotFoundDomainError {
+  constructor(id: string) {
+    super({
+      code: 'MENU_CATEGORY_NOT_FOUND',
+      message: 'Menu category not found.',
+      details: { id },
     });
   }
 }

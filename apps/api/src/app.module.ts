@@ -6,6 +6,7 @@ import { CommonModule } from './common/common.module.js';
 import { CompaniesModule } from './companies/companies.module.js';
 import { validateEnv } from './config/env.validation.js';
 import { EmployeesModule } from './employees/employees.module.js';
+import { FilesModule } from './files/files.module.js';
 import { KitchenModule } from './kitchen/kitchen.module.js';
 import { MenuModule } from './menu/menu.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
@@ -29,6 +30,7 @@ import { StaffModule } from './staff/staff.module.js';
     PricingModule,
     CompaniesModule,
     EmployeesModule,
+    FilesModule,
     MenuModule,
     HealthModule,
   ],

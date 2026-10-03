@@ -645,7 +645,7 @@ async function upsertSeedCompany(
           billingContactName: input.billingContactName,
           billingContactEmail: input.billingContactEmail,
           defaultPackagingTypeId: input.packagingTypeId,
-          leaveKitchenMinutes: 30,
+          leaveKitchenMinutes: 60,
           defaultDeliveryTime: new Date('1970-01-01T12:30:00.000Z'),
           active: true,
           domains: { create: { domain: input.domain } },

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FilesModule } from '../files/files.module.js';
 import { CombinationValidator } from './combinations/combination-validator.js';
 import { DishController } from './dishes/dish.controller.js';
 import { DishService } from './dishes/dish.service.js';
@@ -10,6 +11,7 @@ import { ReferenceDataController } from './reference/reference-data.controller.j
 import { ReferenceDataService } from './reference/reference-data.service.js';
 
 @Module({
+  imports: [FilesModule],
   controllers: [
     DishController,
     OptionController,

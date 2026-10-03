@@ -64,6 +64,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return this.fromHttpException(exception, requestId);
     }
 
+    if (isMulterFileTooLarge(exception)) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        code: 'FILE_TOO_LARGE',
+        message: 'File exceeds the 2 MB limit.',
+        requestId,
+      };
+    }
+
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       code: 'INTERNAL_SERVER_ERROR',
@@ -140,6 +149,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     return undefined;
   }
+}
+
+function isMulterFileTooLarge(exception: unknown): boolean {
+  return (
+    typeof exception === 'object' &&
+    exception !== null &&
+    'code' in exception &&
+    (exception as { code: string }).code === 'LIMIT_FILE_SIZE'
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

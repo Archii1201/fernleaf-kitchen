@@ -549,7 +549,7 @@ model Company {
   id                     String    @id @default(uuid())
   name                   String
   legalName              String?
-  priceTierId            String
+  priceTierId            String?
   /// Billing contact details, kept on the company itself.
   billingContactName     String?
   billingContactEmail    String?
@@ -562,7 +562,9 @@ model Company {
   defaultPackagingTypeId String?
   /// Minutes before `defaultDeliveryTime` at which an order for this company
   /// must leave the kitchen. Dispatch planning (a later step) consumes it.
-  leaveKitchenMinutes    Int       @default(30)
+  /// Minutes before delivery that this company's orders leave the kitchen.
+  /// Distinct from the kitchen's own 30-minute preparation interval.
+  leaveKitchenMinutes    Int       @default(60)
   /// Standing instructions shown to the driver on every delivery here.
   driverInstructions     String?
   /// Preferred driver. `SetNull` because losing a driver must not take the
@@ -573,7 +575,7 @@ model Company {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  priceTier        PriceTier         @relation(fields: [priceTierId], references: [id], onDelete: Restrict)
+  priceTier        PriceTier?        @relation(fields: [priceTierId], references: [id], onDelete: Restrict)
   owner            CustomerEmployee? @relation("CompanyOwner", fields: [ownerEmployeeId], references: [id], onDelete: SetNull)
   defaultAddress   CompanyAddress?   @relation("CompanyDefaultAddress", fields: [defaultAddressId], references: [id], onDelete: SetNull)
   defaultPackaging PackagingType?    @relation("CompanyDefaultPackaging", fields: [defaultPackagingTypeId], references: [id], onDelete: Restrict)
@@ -868,6 +870,13 @@ model Order {
   priceTierId   String
   priceTierName String
 
+  /// Company leave-kitchen default snapshotted at order creation.
+  leaveKitchenMinutes Int
+
+  /// Current invoice, if any. Cleared when that invoice is voided so the
+  /// order can be billed again; historical InvoiceLine rows stay put.
+  invoiceId String?
+
   subtotalCents Int @default(0)
   totalCents    Int @default(0)
 
@@ -879,6 +888,10 @@ model Order {
   /// Cutoff processing state (the algorithm itself is a later step).
   cutoffRunId       String?
   cutoffProcessedAt DateTime?
+
+  kitchenStartedAt DateTime?
+  kitchenReadyAt   DateTime?
+  dispatchReadyAt  DateTime?
 
   placedAt        DateTime?
   confirmedAt     DateTime?
@@ -901,15 +914,14 @@ model Order {
   driver           Staff?           @relation("OrderDriver", fields: [driverStaffId], references: [id], onDelete: Restrict)
   deliveryPhoto    DbFile?          @relation("OrderDeliveryPhoto", fields: [deliveryPhotoFileId], references: [id], onDelete: SetNull)
   cutoffRun        CutoffRun?       @relation(fields: [cutoffRunId], references: [id], onDelete: Restrict)
+  invoice          Invoice?         @relation("InvoiceOrders", fields: [invoiceId], references: [id], onDelete: SetNull)
 
   lines       OrderLine[]
   events      OrderEvent[]
   prepUnits   PrepUnit[]
   dropOrder   DropOrder?
   credits     OrderCredit[] @relation("OrderCredits")
-  /// At most one invoice line may reference an order (`InvoiceLine.orderId` is
-  /// unique), so an order is billed at most once.
-  invoiceLine InvoiceLine?  @relation("InvoiceLineOrder")
+  invoiceLine InvoiceLine[] @relation("InvoiceLineOrder")
 
   @@index([companyId, deliveryDate])
   @@index([deliveryDate, status])
@@ -918,6 +930,10 @@ model Order {
   @@index([createdAt])
   @@index([driverStaffId])
   @@index([cutoffRunId])
+  @@index([invoiceId])
+  @@index([kitchenStartedAt])
+  @@index([kitchenReadyAt])
+  @@index([dispatchReadyAt])
 }
 
 /// One ordered dish, with everything needed to reprint the order later.
@@ -1080,9 +1096,12 @@ model Drop {
   driverStaffId       String?
   deliveryPhotoFileId String?
   notes               String?
+  note                String?
+  onTime              Boolean?
 
-  dispatchedAt DateTime?
-  deliveredAt  DateTime?
+  dispatchedAt     DateTime?
+  outForDeliveryAt DateTime?
+  deliveredAt      DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1098,6 +1117,7 @@ model Drop {
   @@index([deliveryDate, status])
   @@index([status])
   @@index([driverStaffId])
+  @@index([outForDeliveryAt])
 }
 
 /// Membership of an order in a drop. An order can belong to at most one drop.
@@ -1138,6 +1158,8 @@ model Invoice {
 
   company Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
   lines   InvoiceLine[]
+  orders  Order[]       @relation("InvoiceOrders")
+  credits OrderCredit[] @relation("InvoiceCredits")
 
   @@index([companyId, status])
   @@index([status])
@@ -1148,17 +1170,15 @@ model Invoice {
 /// One billable line. It points at either an order or a credit (or neither,
 /// for a manual adjustment).
 ///
-/// `orderId` and `orderCreditId` each carry their own single-column unique
-/// index on a nullable column: PostgreSQL treats NULLs as distinct, so this
-/// yields exactly "an order/credit may be invoiced at most once" across all
-/// invoices. A composite `@@unique([invoiceId, orderId])` would be wrong - see
-/// docs/explanation/step3.md.
+/// Historical lines stay after an invoice is voided. "Currently billed"
+/// is `Order.invoiceId` / `OrderCredit.invoiceId` (cleared on VOID), not a
+/// unique index on these FKs — that unique would block re-invoicing.
 model InvoiceLine {
   id            String          @id @default(uuid())
   invoiceId     String
   type          InvoiceLineType
-  orderId       String?         @unique
-  orderCreditId String?         @unique
+  orderId       String?
+  orderCreditId String?
   description   String
   amountCents   Int
 
@@ -1170,6 +1190,8 @@ model InvoiceLine {
 
   @@index([invoiceId])
   @@index([type])
+  @@index([orderId])
+  @@index([orderCreditId])
 }
 
 /// A goodwill credit owed back to a company, optionally tied to an order.
@@ -1179,6 +1201,7 @@ model OrderCredit {
   id              String  @id @default(uuid())
   companyId       String
   orderId         String?
+  invoiceId       String?
   amountCents     Int
   reason          String
   createdByUserId String?
@@ -1186,13 +1209,15 @@ model OrderCredit {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company     Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  order       Order?       @relation("OrderCredits", fields: [orderId], references: [id], onDelete: Restrict)
-  createdBy   User?        @relation("OrderCreditCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  invoiceLine InvoiceLine? @relation("InvoiceLineCredit")
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  order       Order?        @relation("OrderCredits", fields: [orderId], references: [id], onDelete: Restrict)
+  invoice     Invoice?      @relation("InvoiceCredits", fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdBy   User?         @relation("OrderCreditCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  invoiceLine InvoiceLine[] @relation("InvoiceLineCredit")
 
   @@index([companyId])
   @@index([orderId])
+  @@index([invoiceId])
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import {
   paginate,
   type PaginatedResponse,
 } from '../../common/pagination/index.js';
+import { FilesService } from '../../files/files.service.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   DishNotFoundError,
@@ -54,7 +55,10 @@ const DISH_SELECT = {
 
 @Injectable()
 export class DishService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly files: FilesService,
+  ) {}
 
   async list(query: ListDishQueryDto): Promise<PaginatedResponse<unknown>> {
     const where = {
@@ -311,12 +315,7 @@ export class DishService {
     }
 
     if (dto.imageFileId) {
-      await this.assertAllExist('file', [dto.imageFileId], (ids) =>
-        this.prisma.dbFile.findMany({
-          where: { id: { in: ids } },
-          select: { id: true },
-        }),
-      );
+      await this.files.assertImage(dto.imageFileId);
     }
 
     if (dto.allergenIds?.length) {

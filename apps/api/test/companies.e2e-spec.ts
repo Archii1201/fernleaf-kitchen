@@ -154,7 +154,7 @@ describe('Companies and employees (e2e)', () => {
         'FRIDAY',
       ]);
       expect(response.body.billingContact.name).toBe('Bill Ops');
-      expect(response.body.deliveryDefaults.leaveKitchenMinutes).toBe(30);
+      expect(response.body.deliveryDefaults.leaveKitchenMinutes).toBe(60);
     });
 
     it('creates the second company used by the move test', async () => {
@@ -360,6 +360,37 @@ describe('Companies and employees (e2e)', () => {
         .expect(200);
 
       expect(response.body.priceTier.id).toBe(priceTierId);
+    });
+
+    it('clears the company tier so default pricing applies', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/api/companies')
+        .set('Cookie', adminCookie)
+        .send({
+          name: `No tier ${SUFFIX}`,
+          domains: [`notier-${SUFFIX}.com`],
+        })
+        .expect(201);
+
+      expect(created.body.priceTier).toBeNull();
+
+      await request(app.getHttpServer())
+        .patch(`/api/companies/${created.body.id}/price-tier`)
+        .set('Cookie', adminCookie)
+        .send({ priceTierId: null })
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.priceTier).toBeNull();
+        });
+
+      const menu = await request(app.getHttpServer())
+        .get(`/api/menu?companyId=${created.body.id}`)
+        .set('Cookie', adminCookie)
+        .expect(200);
+
+      expect(menu.body.priceTier.code).toBe('STANDARD');
+
+      await prisma.company.deleteMany({ where: { id: created.body.id } });
     });
   });
 
@@ -575,6 +606,7 @@ describe('Companies and employees (e2e)', () => {
     },
 
     priceTierName: 'Standard',
+      leaveKitchenMinutes: 60,
   },
   select: {
     id: true,

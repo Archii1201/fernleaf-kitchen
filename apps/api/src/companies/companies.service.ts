@@ -149,7 +149,9 @@ export class CompaniesService {
    * delivery - a half-created company is unusable, not merely incomplete.
    */
   async create(dto: CreateCompanyDto): Promise<unknown> {
-    await this.assertPriceTierExists(dto.priceTierId);
+    if (dto.priceTierId) {
+      await this.assertPriceTierExists(dto.priceTierId);
+    }
     await this.assertNameAvailable(dto.name);
 
     const domains = this.normalizeDomains(dto.domains);
@@ -166,7 +168,7 @@ export class CompaniesService {
         data: {
           name: dto.name,
           legalName: dto.legalName ?? null,
-          priceTierId: dto.priceTierId,
+          priceTierId: dto.priceTierId ?? null,
           billingContactName: dto.billingContactName ?? null,
           billingContactEmail: dto.billingContactEmail?.trim().toLowerCase() ?? null,
           billingContactPhone: dto.billingContactPhone ?? null,
@@ -240,11 +242,13 @@ export class CompaniesService {
     dto: UpdateCompanyPriceTierDto,
   ): Promise<unknown> {
     await this.findOrThrow(id);
-    await this.assertPriceTierExists(dto.priceTierId);
+    if (dto.priceTierId) {
+      await this.assertPriceTierExists(dto.priceTierId);
+    }
 
     await this.prisma.company.update({
       where: { id },
-      data: { priceTierId: dto.priceTierId },
+      data: { priceTierId: dto.priceTierId ?? null },
     });
 
     return this.getById(id);
@@ -885,7 +889,7 @@ type CompanyRow = {
   defaultDriverStaffId: string | null;
   createdAt: Date;
   updatedAt: Date;
-  priceTier: { id: string; code: string; name: string };
+  priceTier: { id: string; code: string; name: string } | null;
   owner: { id: string; fullName: string; email: string } | null;
   defaultDriver: { id: string; staffCode: string; fullName: string } | null;
   defaultPackaging: { id: string; code: string; name: string } | null;

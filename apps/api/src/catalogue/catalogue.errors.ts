@@ -54,6 +54,16 @@ export class CatalogueCodeConflictError extends ConflictDomainError {
   }
 }
 
+export class ReferenceConflictError extends ConflictDomainError {
+  constructor(entity: string, field: 'code' | 'name', value: string) {
+    super({
+      code: 'REFERENCE_ALREADY_EXISTS',
+      message: `Another ${entity} already uses this ${field}.`,
+      details: { entity, field, value },
+    });
+  }
+}
+
 /** A referenced reference-data row (station, allergen, tag, file) is missing. */
 export class UnknownReferenceError extends ValidationDomainError {
   constructor(reference: string, ids: readonly string[]) {

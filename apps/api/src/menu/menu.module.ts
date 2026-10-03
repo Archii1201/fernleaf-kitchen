@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PricingModule } from '../pricing/pricing.module.js';
 import { MenuContextLoader } from './menu-context.loader.js';
+import { MenuAdminService } from './menu-admin.service.js';
 import { MenuController } from './menu.controller.js';
 import { MenuResolver } from './menu.resolver.js';
 import { MenuService } from './menu.service.js';
@@ -13,7 +14,7 @@ import { MenuService } from './menu.service.js';
 @Module({
   imports: [PricingModule],
   controllers: [MenuController],
-  providers: [MenuContextLoader, MenuResolver, MenuService],
+  providers: [MenuContextLoader, MenuResolver, MenuService, MenuAdminService],
   exports: [MenuResolver, MenuService, MenuContextLoader],
 })
 export class MenuModule {}

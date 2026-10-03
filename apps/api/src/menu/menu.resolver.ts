@@ -112,7 +112,8 @@ export class MenuResolver {
       return available;
     }
 
-    const reason = resolved[0]?.reason ?? 'DISH_INACTIVE';
+    const unavailable = resolved.find((item) => !isAvailable(item));
+const reason = unavailable?.reason ?? 'DISH_INACTIVE';
 
     throw new DishNotOrderableError(dishId, reason, categoryId);
   }

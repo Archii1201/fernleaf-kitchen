@@ -32,7 +32,7 @@ const COMPANY_ROW = {
   defaultAddressId: null,
   defaultDeliveryTime: null,
   defaultPackagingTypeId: null,
-  leaveKitchenMinutes: 30,
+  leaveKitchenMinutes: 60,
   driverInstructions: null,
   defaultDriverStaffId: null,
   createdAt: new Date('2026-10-01T00:00:00Z'),
@@ -237,6 +237,27 @@ describe('CompaniesService', () => {
       await expect(service.create(baseCreate)).rejects.toThrow(
         PriceTierNotFoundError,
       );
+    });
+
+    it('creates a company with no price tier so the default applies later', async () => {
+      const { priceTierId: _ignored, ...withoutTier } = baseCreate;
+      await service.create(withoutTier);
+
+      expect(prisma.priceTier.findUnique).not.toHaveBeenCalled();
+      expect(prisma.company.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ priceTierId: null }),
+        }),
+      );
+    });
+
+    it('clears an assigned price tier', async () => {
+      await service.updatePriceTier(COMPANY_ID, { priceTierId: null });
+
+      expect(prisma.company.update).toHaveBeenCalledWith({
+        where: { id: COMPANY_ID },
+        data: { priceTierId: null },
+      });
     });
 
     it('rejects an empty working week', async () => {

@@ -129,6 +129,12 @@ export class MenuContextLoader {
       company.priceTierId,
     );
     const pricing = await this.pricingLoader.loadForTier(priceTierId, ['dish']);
+    const priceTier =
+      company.priceTier ??
+      (await this.prisma.priceTier.findUniqueOrThrow({
+        where: { id: priceTierId },
+        select: { id: true, code: true, name: true },
+      }));
 
     return {
       company: {
@@ -143,7 +149,7 @@ export class MenuContextLoader {
             email: employee.email,
           }
         : null,
-      priceTier: company.priceTier,
+      priceTier,
       hiddenCategoryIds: new Set(
         hiddenCategories.map((entry) => entry.menuCategoryId),
       ),

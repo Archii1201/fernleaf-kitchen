@@ -26,7 +26,7 @@ export const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 /** Minutes in a day; the matching CHECK lives in postgres_constraints.sql. */
 export const MAX_LEAVE_KITCHEN_MINUTES = 1_440;
 
-export const DEFAULT_LEAVE_KITCHEN_MINUTES = 30;
+export const DEFAULT_LEAVE_KITCHEN_MINUTES = 60;
 
 const toBoolean = ({ value }: { value: unknown }): unknown =>
   value === 'true' || value === true
@@ -159,9 +159,12 @@ export class CreateCompanyDto {
   @MaxLength(200)
   legalName?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description: 'Omit to inherit the default price tier',
+  })
+  @IsOptional()
   @IsUUID()
-  priceTierId!: string;
+  priceTierId?: string;
 
   @ApiProperty({
     type: [String],
@@ -285,9 +288,13 @@ export class UpdateDeliveryDefaultsDto {
 }
 
 export class UpdateCompanyPriceTierDto {
-  @ApiProperty()
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Null clears the company tier so the default applies',
+  })
+  @IsOptional()
   @IsUUID()
-  priceTierId!: string;
+  priceTierId?: string | null;
 }
 
 export class AddCompanyDomainDto {
