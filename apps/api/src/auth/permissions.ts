@@ -30,6 +30,9 @@ export const PERMISSIONS = {
   BILLING_VIEW: 'billing.view',
   BILLING_MANAGE: 'billing.manage',
 
+  SETTINGS_READ: 'settings.read',
+  SETTINGS_MANAGE: 'settings.manage',
+
   STAFF_VIEW: 'staff.view',
   STAFF_MANAGE: 'staff.manage',
 

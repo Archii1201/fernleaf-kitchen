@@ -183,6 +183,121 @@ async function upsertStaffProfile(
   });
 }
 
+/** Default cutoff: 16:00 local, two kitchen working days before delivery. */
+export const DEFAULT_CUTOFF_TIME = new Date('1970-01-01T16:00:00.000Z');
+export const DEFAULT_CUTOFF_WORKING_DAYS = 2;
+export const SETTINGS_SINGLETON_ID = 'singleton';
+
+const DEFAULT_WORKING_WEEK = [
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+] as const;
+
+/**
+ * Kitchen settings and the working week. `update: {}` keeps an admin's later
+ * changes intact: re-seeding must not silently reset the cutoff.
+ */
+export async function seedKitchenSettings(prisma: SeedClient): Promise<void> {
+  await prisma.kitchenSettings.upsert({
+    where: { id: SETTINGS_SINGLETON_ID },
+    update: {},
+    create: {
+      id: SETTINGS_SINGLETON_ID,
+      cutoffTime: DEFAULT_CUTOFF_TIME,
+      cutoffWorkingDays: DEFAULT_CUTOFF_WORKING_DAYS,
+    },
+  });
+
+  for (const weekday of DEFAULT_WORKING_WEEK) {
+    await prisma.kitchenWorkingDay.upsert({
+      where: { weekday },
+      update: {},
+      create: { weekday },
+    });
+  }
+}
+
+const ALLERGENS = [
+  { code: 'GLUTEN', name: 'Gluten' },
+  { code: 'DAIRY', name: 'Dairy' },
+  { code: 'NUTS', name: 'Tree nuts' },
+  { code: 'PEANUTS', name: 'Peanuts' },
+  { code: 'SOY', name: 'Soy' },
+  { code: 'EGG', name: 'Egg' },
+];
+
+const DIETARY_TAGS = [
+  { code: 'VEGETARIAN', name: 'Vegetarian' },
+  { code: 'VEGAN', name: 'Vegan' },
+  { code: 'HALAL', name: 'Halal' },
+  { code: 'GLUTEN_FREE', name: 'Gluten free' },
+];
+
+const KITCHEN_STATIONS = [
+  { code: 'HOT_LINE', name: 'Hot line', sortOrder: 0 },
+  { code: 'COLD_LINE', name: 'Cold line', sortOrder: 1 },
+  { code: 'BAKERY', name: 'Bakery', sortOrder: 2 },
+  { code: 'PACKING', name: 'Packing', sortOrder: 3 },
+];
+
+const PORTION_SIZES = [
+  { code: 'SMALL', name: 'Small', sortOrder: 0 },
+  { code: 'REGULAR', name: 'Regular', sortOrder: 1 },
+  { code: 'LARGE', name: 'Large', sortOrder: 2 },
+];
+
+const PACKAGING_TYPES = [
+  { code: 'INDIVIDUAL', name: 'Individually packed' },
+  { code: 'BUFFET', name: 'Buffet trays' },
+  { code: 'BULK', name: 'Bulk containers' },
+];
+
+/** Reference lookups the catalogue depends on. Keyed on their unique codes. */
+export async function seedReferenceData(prisma: SeedClient): Promise<void> {
+  for (const allergen of ALLERGENS) {
+    await prisma.allergen.upsert({
+      where: { code: allergen.code },
+      update: { name: allergen.name },
+      create: allergen,
+    });
+  }
+
+  for (const tag of DIETARY_TAGS) {
+    await prisma.dietaryTag.upsert({
+      where: { code: tag.code },
+      update: { name: tag.name },
+      create: tag,
+    });
+  }
+
+  for (const station of KITCHEN_STATIONS) {
+    await prisma.kitchenStation.upsert({
+      where: { code: station.code },
+      update: { name: station.name, sortOrder: station.sortOrder },
+      create: station,
+    });
+  }
+
+  for (const portionSize of PORTION_SIZES) {
+    await prisma.portionSize.upsert({
+      where: { code: portionSize.code },
+      update: { name: portionSize.name, sortOrder: portionSize.sortOrder },
+      create: portionSize,
+    });
+  }
+
+  for (const packagingType of PACKAGING_TYPES) {
+    await prisma.packagingType.upsert({
+      where: { code: packagingType.code },
+      update: { name: packagingType.name },
+      create: packagingType,
+    });
+  }
+}
+
 export function createSeedClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
 
@@ -198,9 +313,12 @@ async function main(): Promise<void> {
 
   try {
     await seedAuth(prisma);
+    await seedKitchenSettings(prisma);
+    await seedReferenceData(prisma);
     console.log(
       `Seeded ${Object.keys(ROLE_PERMISSIONS).length} roles, ` +
-        `${ALL_PERMISSIONS.length} permissions and ${STAFF_ACCOUNTS.length} staff users.`,
+        `${ALL_PERMISSIONS.length} permissions and ${STAFF_ACCOUNTS.length} staff users, ` +
+        'plus kitchen settings and catalogue reference data.',
     );
   } finally {
     await prisma.$disconnect();

@@ -413,13 +413,16 @@ model OptionDietaryTag {
 
 /// A reusable group of options ("Spice level", "Bread choice").
 model OptionGroup {
-  id           String  @id @default(uuid())
-  code         String  @unique
-  name         String  @unique
+  id            String  @id @default(uuid())
+  code          String  @unique
+  name          String  @unique
   /// Default requiredness; a dish may override it on `DishOptionGroup`.
-  required     Boolean @default(false)
-  displayOrder Int     @default(0)
-  active       Boolean @default(true)
+  required      Boolean @default(false)
+  displayOrder  Int     @default(0)
+  /// Maximum options selectable from this group in one combination.
+  /// Null means unlimited.
+  maxSelections Int?
+  active        Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -645,6 +648,20 @@ model CompanyWorkingDay {
 // Kitchen calendar - deliberately separate from the company calendar.
 // Used later by cutoff processing; no business rules are encoded here.
 // ---------------------------------------------------------------------------
+
+/// Single-row table holding the admin-managed cutoff configuration.
+/// `id` is pinned to one value by a CHECK constraint (see
+/// prisma/sql/postgres_constraints.sql) so a second row cannot be created.
+model KitchenSettings {
+  id                String   @id
+  /// Local clock time (application timezone) at which the cutoff falls.
+  cutoffTime        DateTime @db.Time(0)
+  /// How many kitchen working days before the delivery date the cutoff sits.
+  cutoffWorkingDays Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
 model KitchenWorkingDay {
   id      String  @id @default(uuid())

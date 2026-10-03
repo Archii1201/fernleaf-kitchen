@@ -92,6 +92,23 @@ ALTER TABLE "DbFile"
   ADD CONSTRAINT "DbFile_sizeBytes_non_negative" CHECK ("sizeBytes" >= 0);
 
 -- ---------------------------------------------------------------------------
+-- 2b. Kitchen settings is a singleton, and option groups cannot allow a
+--     non-positive number of selections.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "KitchenSettings"
+  DROP CONSTRAINT IF EXISTS "KitchenSettings_singleton",
+  ADD CONSTRAINT "KitchenSettings_singleton" CHECK ("id" = 'singleton'),
+  DROP CONSTRAINT IF EXISTS "KitchenSettings_cutoffWorkingDays_range",
+  ADD CONSTRAINT "KitchenSettings_cutoffWorkingDays_range"
+    CHECK ("cutoffWorkingDays" >= 0 AND "cutoffWorkingDays" <= 14);
+
+ALTER TABLE "OptionGroup"
+  DROP CONSTRAINT IF EXISTS "OptionGroup_maxSelections_positive",
+  ADD CONSTRAINT "OptionGroup_maxSelections_positive"
+    CHECK ("maxSelections" IS NULL OR "maxSelections" > 0);
+
+-- ---------------------------------------------------------------------------
 -- 3. An invoice line must match its own type: an ORDER line points at an
 --    order, a CREDIT line at a credit, an ADJUSTMENT line at neither.
 --    (The "at most once invoiced" rule is already enforced by the single
