@@ -12,14 +12,42 @@ import {
 } from '../src/auth/permissions.js';
 
 /** The four staff accounts required by the assignment. */
-export const STAFF_ACCOUNTS: ReadonlyArray<{ email: string; role: RoleName }> = [
-  { email: 'admin@test.com', role: ROLES.ADMIN },
-  { email: 'kitchen@test.com', role: ROLES.KITCHEN },
-  { email: 'dispatch@test.com', role: ROLES.DISPATCH },
-  { email: 'driver@test.com', role: ROLES.DRIVER },
+export const STAFF_ACCOUNTS: ReadonlyArray<{
+  email: string;
+  role: RoleName;
+  staffCode: string;
+  fullName: string;
+}> = [
+  {
+    email: 'admin@test.com',
+    role: ROLES.ADMIN,
+    staffCode: 'ADMIN-001',
+    fullName: 'Fernleaf Admin',
+  },
+  {
+    email: 'kitchen@test.com',
+    role: ROLES.KITCHEN,
+    staffCode: 'KITCHEN-001',
+    fullName: 'Kitchen Lead',
+  },
+  {
+    email: 'dispatch@test.com',
+    role: ROLES.DISPATCH,
+    staffCode: 'DISPATCH-001',
+    fullName: 'Dispatch Coordinator',
+  },
+  {
+    email: 'driver@test.com',
+    role: ROLES.DRIVER,
+    staffCode: 'DRIVER-001',
+    fullName: 'Delivery Driver',
+  },
 ];
 
 export const SEED_PASSWORD = 'Test@1234';
+
+/** Client type used by the seed functions and by their tests. */
+export type SeedClient = PrismaClient;
 
 /**
  * Idempotent seed of roles, permissions and the four staff logins.
@@ -29,13 +57,13 @@ export const SEED_PASSWORD = 'Test@1234';
  * so running this repeatedly converges on the same state instead of
  * duplicating rows.
  */
-export async function seedAuth(prisma: PrismaClient): Promise<void> {
+export async function seedAuth(prisma: SeedClient): Promise<void> {
   await seedPermissions(prisma);
   await seedRolesWithGrants(prisma);
   await seedStaffUsers(prisma);
 }
 
-async function seedPermissions(prisma: PrismaClient): Promise<void> {
+async function seedPermissions(prisma: SeedClient): Promise<void> {
   for (const key of ALL_PERMISSIONS) {
     await prisma.permission.upsert({
       where: { key },
@@ -45,7 +73,7 @@ async function seedPermissions(prisma: PrismaClient): Promise<void> {
   }
 }
 
-async function seedRolesWithGrants(prisma: PrismaClient): Promise<void> {
+async function seedRolesWithGrants(prisma: SeedClient): Promise<void> {
   for (const [roleName, permissionKeys] of Object.entries(ROLE_PERMISSIONS)) {
     const role = await prisma.role.upsert({
       where: { name: roleName },
@@ -79,7 +107,7 @@ async function seedRolesWithGrants(prisma: PrismaClient): Promise<void> {
   }
 }
 
-async function seedStaffUsers(prisma: PrismaClient): Promise<void> {
+async function seedStaffUsers(prisma: SeedClient): Promise<void> {
   for (const account of STAFF_ACCOUNTS) {
     const role = await prisma.role.findUniqueOrThrow({
       where: { name: account.role },
@@ -92,14 +120,17 @@ async function seedStaffUsers(prisma: PrismaClient): Promise<void> {
     });
 
     if (!existing) {
-      await prisma.user.create({
+      const created = await prisma.user.create({
         data: {
           email: account.email,
           passwordHash: await bcrypt.hash(SEED_PASSWORD, PASSWORD_SALT_ROUNDS),
           roleId: role.id,
           active: true,
         },
+        select: { id: true },
       });
+
+      await upsertStaffProfile(prisma, created.id, account);
       continue;
     }
 
@@ -126,7 +157,30 @@ async function seedStaffUsers(prisma: PrismaClient): Promise<void> {
             }),
       },
     });
+
+    await upsertStaffProfile(prisma, existing.id, account);
   }
+}
+
+/**
+ * Staff accounts also get the operational profile that Step 5's staff
+ * endpoints edit. Keyed on the unique `userId`, so re-seeding updates in place.
+ */
+async function upsertStaffProfile(
+  prisma: SeedClient,
+  userId: string,
+  account: (typeof STAFF_ACCOUNTS)[number],
+): Promise<void> {
+  await prisma.staff.upsert({
+    where: { userId },
+    update: { staffCode: account.staffCode, fullName: account.fullName },
+    create: {
+      userId,
+      staffCode: account.staffCode,
+      fullName: account.fullName,
+      active: true,
+    },
+  });
 }
 
 export function createSeedClient(): PrismaClient {

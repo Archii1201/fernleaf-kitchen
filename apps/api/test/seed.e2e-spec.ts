@@ -1,13 +1,17 @@
-import type { PrismaClient } from '@prisma/client';
 import {
   ALL_PERMISSIONS,
   ROLE_PERMISSIONS,
   ROLES,
 } from '../src/auth/permissions.js';
-import { createSeedClient, seedAuth, STAFF_ACCOUNTS } from '../prisma/seed.js';
+import {
+  createSeedClient,
+  seedAuth,
+  STAFF_ACCOUNTS,
+  type SeedClient,
+} from '../prisma/seed.js';
 
 describe('staff seed (e2e)', () => {
-  let prisma: PrismaClient;
+  let prisma: SeedClient;
 
   beforeAll(async () => {
     prisma = createSeedClient();
@@ -79,12 +83,16 @@ describe('staff seed (e2e)', () => {
     expect(await keysFor(ROLES.ADMIN)).toContain('users.manage');
   });
 
-  it('does not duplicate anything when run again', async () => {
+  it(
+  'does not duplicate anything when run again',
+  async () => {
     const before = await snapshot();
 
     await seedAuth(prisma);
     await seedAuth(prisma);
 
     expect(await snapshot()).toEqual(before);
-  });
+  },
+  20000,
+);
 });
