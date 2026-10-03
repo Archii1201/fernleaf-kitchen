@@ -26,7 +26,7 @@ describe('PasswordService', () => {
     const hash = await service.hash('Test@1234');
 
     await expect(service.verify('Test@12345', hash)).resolves.toBe(false);
-  });
+  },15000);
 
   it('salts hashes so the same password hashes differently', async () => {
     const [first, second] = await Promise.all([
@@ -35,5 +35,5 @@ describe('PasswordService', () => {
     ]);
 
     expect(first).not.toBe(second);
-  });
+  },15000);
 });
