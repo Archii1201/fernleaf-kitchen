@@ -10,6 +10,12 @@ import {
   ROLES,
   type RoleName,
 } from '../src/auth/permissions.js';
+import {
+  seedDemoOperations,
+  seedExtendedCatalogue,
+  seedExtendedCompanies,
+  seedExtendedPricing,
+} from './seed-demo.js';
 
 /** The four staff accounts required by the assignment. */
 export const STAFF_ACCOUNTS: ReadonlyArray<{
@@ -837,6 +843,41 @@ export async function seedMenu(prisma: SeedClient): Promise<void> {
   }
 }
 
+export async function databaseIsEmpty(prisma: SeedClient): Promise<boolean> {
+  return (await prisma.user.count()) === 0;
+}
+
+export async function seedAll(prisma: SeedClient): Promise<void> {
+  await seedAuth(prisma);
+  await seedKitchenSettings(prisma);
+  await seedReferenceData(prisma);
+  await seedCatalogueSamples(prisma);
+  await seedExtendedCatalogue(prisma);
+  await seedMenu(prisma);
+  await seedPricing(prisma);
+  await seedExtendedPricing(prisma);
+  await seedCompanies(prisma);
+  await seedExtendedCompanies(prisma);
+  await seedDemoOperations(prisma);
+}
+
+/**
+ * Empty databases get the full demo. A populated database is left alone
+ * unless FORCE_SEED=true. Re-runs are upsert-only and do not delete reviewer rows.
+ */
+export async function seedIfNeeded(
+  prisma: SeedClient,
+  options: { force?: boolean } = {},
+): Promise<{ seeded: boolean }> {
+  const force = options.force ?? process.env.FORCE_SEED === 'true';
+  if (!force && !(await databaseIsEmpty(prisma))) {
+    return { seeded: false };
+  }
+
+  await seedAll(prisma);
+  return { seeded: true };
+}
+
 export function createSeedClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
 
@@ -851,17 +892,15 @@ async function main(): Promise<void> {
   const prisma = createSeedClient();
 
   try {
-    await seedAuth(prisma);
-    await seedKitchenSettings(prisma);
-    await seedReferenceData(prisma);
-    await seedCatalogueSamples(prisma);
-    await seedMenu(prisma);
-    await seedPricing(prisma);
-    await seedCompanies(prisma);
+    const result = await seedIfNeeded(prisma, {
+      force: process.env.FORCE_SEED === 'true',
+    });
     console.log(
-      `Seeded ${Object.keys(ROLE_PERMISSIONS).length} roles, ` +
-        `${ALL_PERMISSIONS.length} permissions and ${STAFF_ACCOUNTS.length} staff users, ` +
-        'plus kitchen settings, catalogue, price tiers, sample companies and employees.',
+      result.seeded
+        ? `Seeded ${Object.keys(ROLE_PERMISSIONS).length} roles, ` +
+            `${ALL_PERMISSIONS.length} permissions and ${STAFF_ACCOUNTS.length} staff users, ` +
+            'plus kitchen settings, catalogue, price tiers, companies and demo operations.'
+        : 'Database already has data; seed skipped. Set FORCE_SEED=true to upsert demo rows without wiping reviewer data.',
     );
   } finally {
     await prisma.$disconnect();

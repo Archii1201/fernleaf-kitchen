@@ -40,6 +40,7 @@ import { KitchenTime } from './time/kitchen-time.js';
     SettingsService,
     CutoffService,
     CutoffProcessingService,
+    KitchenBoardService,
   ],
 })
 export class KitchenModule {}

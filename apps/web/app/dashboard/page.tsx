@@ -1,21 +1,24 @@
-export default function DashboardPage() {
-  return (
-    <main>
-      <h1>Dashboard</h1>
-      <p>Welcome to Fernleaf Kitchen.</p>
-      <nav>
-        <ul>
-          <li>
-            <a href="/companies">Companies</a>
-          </li>
-          <li>
-            <a href="/employees">Employees</a>
-          </li>
-          <li>
-            <a href="/pricing">Pricing</a>
-          </li>
-        </ul>
-      </nav>
-    </main>
-  );
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useProfile } from './use-profile';
+
+export default function DashboardIndexPage() {
+  const { permissions, error } = useProfile();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (permissions.includes('reports.view')) {
+      router.replace('/dashboard/admin');
+    } else if (permissions.includes('kitchen.view')) {
+      router.replace('/dashboard/kitchen');
+    } else if (permissions.includes('dispatch.view')) {
+      router.replace('/dashboard/dispatch');
+    } else if (permissions.includes('driver.view')) {
+      router.replace('/dashboard/driver');
+    }
+  }, [permissions, router]);
+
+  return <p>{error ?? 'Opening your dashboard…'}</p>;
 }

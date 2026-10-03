@@ -22,7 +22,7 @@ import type {
   ListInvoicesQueryDto,
 } from './dto/billing.dto.js';
 
-const BILLABLE_STATUSES = [
+export const BILLABLE_STATUSES = [
   'CONFIRMED',
   'IN_KITCHEN',
   'READY',

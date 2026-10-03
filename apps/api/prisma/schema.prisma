@@ -109,6 +109,17 @@ enum InvoiceLineType {
   ADJUSTMENT
 }
 
+/// Marks records created by the demo seed/maintenance so they can be
+/// refreshed without touching reviewer data.
+model DemoOwnedRecord {
+  key        String   @id
+  entityType String
+  entityId   String
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
 enum CutoffRunStatus {
   PENDING
   COMPLETED
