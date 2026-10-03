@@ -49,6 +49,18 @@ describe('permission catalogue', () => {
     );
   });
 
+  it('lets Kitchen read pricing but never change it', () => {
+    expect(ROLE_PERMISSIONS[ROLES.KITCHEN]).toContain(PERMISSIONS.PRICING_VIEW);
+
+    for (const [roleName, permissions] of Object.entries(ROLE_PERMISSIONS)) {
+      if (roleName === ROLES.ADMIN) {
+        continue;
+      }
+
+      expect(permissions).not.toContain(PERMISSIONS.PRICING_MANAGE);
+    }
+  });
+
   it('gives every role the ability to read its own profile', () => {
     for (const permissions of Object.values(ROLE_PERMISSIONS)) {
       expect(permissions).toContain(PERMISSIONS.PROFILE_READ);

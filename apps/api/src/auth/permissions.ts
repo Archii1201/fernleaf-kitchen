@@ -12,11 +12,15 @@ export const PERMISSIONS = {
 
   CATALOGUE_VIEW: 'catalogue.view',
   CATALOGUE_MANAGE: 'catalogue.manage',
+  PRICING_VIEW: 'pricing.view',
   PRICING_MANAGE: 'pricing.manage',
   MENU_MANAGE: 'menu.manage',
 
   COMPANIES_VIEW: 'companies.view',
   COMPANIES_MANAGE: 'companies.manage',
+
+  EMPLOYEES_VIEW: 'employees.view',
+  EMPLOYEES_MANAGE: 'employees.manage',
 
   KITCHEN_VIEW: 'kitchen.view',
   KITCHEN_UPDATE: 'kitchen.update',
@@ -65,6 +69,10 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly PermissionKey[]> = {
     PERMISSIONS.ORDERS_VIEW,
     PERMISSIONS.KITCHEN_VIEW,
     PERMISSIONS.KITCHEN_UPDATE,
+    // Kitchen staff read the catalogue and the price grid they cook against,
+    // but pricing decisions stay with Admin (`pricing.manage`).
+    PERMISSIONS.CATALOGUE_VIEW,
+    PERMISSIONS.PRICING_VIEW,
   ],
   [ROLES.DISPATCH]: [
     PERMISSIONS.PROFILE_READ,

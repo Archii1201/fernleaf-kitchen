@@ -109,6 +109,41 @@ ALTER TABLE "OptionGroup"
     CHECK ("maxSelections" IS NULL OR "maxSelections" > 0);
 
 -- ---------------------------------------------------------------------------
+-- 2c. Price tier derivation. Cycles and depth are validated in the pricing
+--     domain (a CHECK cannot walk a chain), but the two rules PostgreSQL *can*
+--     enforce belong here: a tier may not derive from itself, and a derived
+--     tier must carry the markup it derives with.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "PriceTier"
+  DROP CONSTRAINT IF EXISTS "PriceTier_baseTier_not_self",
+  ADD CONSTRAINT "PriceTier_baseTier_not_self"
+    CHECK ("baseTierId" IS NULL OR "baseTierId" <> "id"),
+  DROP CONSTRAINT IF EXISTS "PriceTier_strategy_inputs",
+  ADD CONSTRAINT "PriceTier_strategy_inputs" CHECK (
+    ("strategy" = 'EXPLICIT' AND "baseTierId" IS NULL)
+    OR ("strategy" = 'COST_MULTIPLIER'
+        AND "markupBasisPoints" IS NOT NULL AND "markupBasisPoints" > 0
+        AND "baseTierId" IS NULL)
+    OR ("strategy" = 'BASE_MARKUP'
+        AND "markupBasisPoints" IS NOT NULL
+        AND "baseTierId" IS NOT NULL)
+  );
+
+-- ---------------------------------------------------------------------------
+-- 2d. Company delivery defaults. "Leave the kitchen N minutes before the
+--     delivery time" is only meaningful for a non-negative N inside a day.
+--     Domain-ownership rules that span two tables (an owner employee or a
+--     default address must belong to the company) cannot be expressed as a
+--     CHECK and are enforced in CompaniesService.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "Company"
+  DROP CONSTRAINT IF EXISTS "Company_leaveKitchenMinutes_range",
+  ADD CONSTRAINT "Company_leaveKitchenMinutes_range"
+    CHECK ("leaveKitchenMinutes" >= 0 AND "leaveKitchenMinutes" <= 1440);
+
+-- ---------------------------------------------------------------------------
 -- 3. An invoice line must match its own type: an ORDER line points at an
 --    order, a CREDIT line at a credit, an ADJUSTMENT line at neither.
 --    (The "at most once invoiced" rule is already enforced by the single

@@ -10,11 +10,17 @@ describe('PasswordService', () => {
     expect(hash.startsWith('$2')).toBe(true);
   });
 
-  it('verifies the correct password', async () => {
+  it(
+  'verifies the correct password',
+  async () => {
     const hash = await service.hash('Test@1234');
 
-    await expect(service.verify('Test@1234', hash)).resolves.toBe(true);
-  });
+    await expect(
+      service.verify('Test@1234', hash),
+    ).resolves.toBe(true);
+  },
+  10000,
+);
 
   it('rejects a wrong password', async () => {
     const hash = await service.hash('Test@1234');

@@ -298,6 +298,466 @@ export async function seedReferenceData(prisma: SeedClient): Promise<void> {
   }
 }
 
+/**
+ * A small, realistic catalogue. Pricing needs something to price, and the
+ * e2e specs need stable rows. Keyed on SKU/code so re-running updates in
+ * place instead of duplicating.
+ */
+const SAMPLE_DISHES = [
+  {
+    sku: 'FK-CURRY-001',
+    name: 'Paneer Butter Curry',
+    temperature: 'HOT' as const,
+    costCents: 880,
+    stationCode: 'HOT_LINE',
+    portionCode: 'REGULAR',
+    moq: 5,
+  },
+  {
+    sku: 'FK-WRAP-001',
+    name: 'Chicken Tikka Wrap',
+    temperature: 'HOT' as const,
+    costCents: 1_020,
+    stationCode: 'HOT_LINE',
+    portionCode: 'REGULAR',
+    moq: null,
+  },
+  {
+    sku: 'FK-SALAD-001',
+    name: 'Garden Salad',
+    temperature: 'COLD' as const,
+    costCents: 540,
+    stationCode: 'COLD_LINE',
+    portionCode: 'SMALL',
+    moq: null,
+  },
+  {
+    sku: 'FK-SPECIAL-001',
+    name: "Chef's Seasonal Special",
+    temperature: 'HOT' as const,
+    costCents: 760,
+    stationCode: 'HOT_LINE',
+    portionCode: 'REGULAR',
+    moq: null,
+  },
+];
+
+const SAMPLE_OPTIONS = [
+  { code: 'FK-OPT-EXTRA-PANEER', name: 'Extra paneer', costCents: 180 },
+  { code: 'FK-OPT-EXTRA-SAUCE', name: 'Extra sauce', costCents: 60 },
+];
+
+export async function seedCatalogueSamples(prisma: SeedClient): Promise<void> {
+  for (const dish of SAMPLE_DISHES) {
+    const station = await prisma.kitchenStation.findUniqueOrThrow({
+      where: { code: dish.stationCode },
+      select: { id: true },
+    });
+    const portionSize = await prisma.portionSize.findUniqueOrThrow({
+      where: { code: dish.portionCode },
+      select: { id: true },
+    });
+
+    await prisma.dish.upsert({
+      where: { sku: dish.sku },
+      update: {
+        name: dish.name,
+        temperature: dish.temperature,
+        costCents: dish.costCents,
+        kitchenStationId: station.id,
+        portionSizeId: portionSize.id,
+        moq: dish.moq,
+      },
+      create: {
+        sku: dish.sku,
+        name: dish.name,
+        temperature: dish.temperature,
+        costCents: dish.costCents,
+        kitchenStationId: station.id,
+        portionSizeId: portionSize.id,
+        moq: dish.moq,
+        active: true,
+      },
+    });
+  }
+
+  for (const option of SAMPLE_OPTIONS) {
+    await prisma.option.upsert({
+      where: { code: option.code },
+      update: { name: option.name, costCents: option.costCents },
+      create: { ...option, active: true },
+    });
+  }
+}
+
+/**
+ * Three tiers that exercise every derivation strategy:
+ *
+ *   Standard   - the default, manually priced
+ *   Enterprise - cost x 2.4 (24000 basis points)
+ *   Partner    - Standard + 15% (1500 basis points), with one override
+ *
+ * `FK-SPECIAL-001` is deliberately left unpriced on Standard so the
+ * missing-price path (and therefore the "hidden from the menu" rule) has a
+ * real example in every environment.
+ */
+const STANDARD_DISH_PRICES: Record<string, number> = {
+  'FK-CURRY-001': 1_799,
+  'FK-WRAP-001': 2_099,
+  'FK-SALAD-001': 1_299,
+};
+
+const STANDARD_OPTION_PRICES: Record<string, number> = {
+  'FK-OPT-EXTRA-PANEER': 350,
+};
+
+/** One manual override on a derived tier, to prove overrides win. */
+const PARTNER_DISH_OVERRIDES: Record<string, number> = {
+  'FK-WRAP-001': 2_250,
+};
+
+export async function seedPricing(prisma: SeedClient): Promise<void> {
+  const standard = await prisma.priceTier.upsert({
+    where: { code: 'STANDARD' },
+    // Never reset the default flag or the rule an admin may have changed.
+    update: { name: 'Standard' },
+    create: {
+      code: 'STANDARD',
+      name: 'Standard',
+      strategy: 'EXPLICIT',
+      isDefault: true,
+      active: true,
+    },
+    select: { id: true },
+  });
+
+  await prisma.priceTier.upsert({
+    where: { code: 'ENTERPRISE' },
+    update: { name: 'Enterprise' },
+    create: {
+      code: 'ENTERPRISE',
+      name: 'Enterprise',
+      strategy: 'COST_MULTIPLIER',
+      markupBasisPoints: 24_000,
+      active: true,
+    },
+    select: { id: true },
+  });
+
+  const partner = await prisma.priceTier.upsert({
+    where: { code: 'PARTNER' },
+    update: { name: 'Partner' },
+    create: {
+      code: 'PARTNER',
+      name: 'Partner',
+      strategy: 'BASE_MARKUP',
+      markupBasisPoints: 1_500,
+      baseTierId: standard.id,
+      active: true,
+    },
+    select: { id: true },
+  });
+
+  for (const [sku, priceCents] of Object.entries(STANDARD_DISH_PRICES)) {
+    await upsertDishPrice(prisma, sku, standard.id, priceCents);
+  }
+
+  for (const [sku, priceCents] of Object.entries(PARTNER_DISH_OVERRIDES)) {
+    await upsertDishPrice(prisma, sku, partner.id, priceCents);
+  }
+
+  for (const [code, priceCents] of Object.entries(STANDARD_OPTION_PRICES)) {
+    const option = await prisma.option.findUnique({
+      where: { code },
+      select: { id: true },
+    });
+
+    if (!option) {
+      continue;
+    }
+
+    await prisma.optionTierPrice.upsert({
+      where: {
+        optionId_priceTierId: { optionId: option.id, priceTierId: standard.id },
+      },
+      update: { priceCents },
+      create: { optionId: option.id, priceTierId: standard.id, priceCents },
+    });
+  }
+}
+
+async function upsertDishPrice(
+  prisma: SeedClient,
+  sku: string,
+  priceTierId: string,
+  priceCents: number,
+): Promise<void> {
+  const dish = await prisma.dish.findUnique({
+    where: { sku },
+    select: { id: true },
+  });
+
+  if (!dish) {
+    return;
+  }
+
+  await prisma.dishTierPrice.upsert({
+    where: { dishId_priceTierId: { dishId: dish.id, priceTierId } },
+    update: { priceCents },
+    create: { dishId: dish.id, priceTierId, priceCents },
+  });
+}
+
+/**
+ * Two sample companies and a handful of employees. Keyed on the globally
+ * unique email domain so re-seeding updates in place and never duplicates.
+ *
+ * Alice starts at Northwind. The e2e suite (and later the Orders step) relies
+ * on orders storing their own `companyId`, so moving her later must not
+ * rewrite history.
+ */
+export async function seedCompanies(prisma: SeedClient): Promise<void> {
+  const standard = await prisma.priceTier.findUnique({
+    where: { code: 'STANDARD' },
+    select: { id: true },
+  });
+  const packaging = await prisma.packagingType.findUnique({
+    where: { code: 'INDIVIDUAL' },
+    select: { id: true },
+  });
+  const dairy = await prisma.allergen.findUnique({
+    where: { code: 'DAIRY' },
+    select: { id: true },
+  });
+  const vegetarian = await prisma.dietaryTag.findUnique({
+    where: { code: 'VEGETARIAN' },
+    select: { id: true },
+  });
+
+  if (!standard) {
+    return;
+  }
+
+  const northwind = await upsertSeedCompany(prisma, {
+    name: 'Northwind Analytics',
+    legalName: 'Northwind Analytics Pvt Ltd',
+    domain: 'northwind.com',
+    priceTierId: standard.id,
+    packagingTypeId: packaging?.id ?? null,
+    billingContactName: 'Priya Shah',
+    billingContactEmail: 'billing@northwind.com',
+    address: {
+      label: 'Head office',
+      line1: '1 Residency Road',
+      city: 'Bengaluru',
+      postalCode: '560025',
+    },
+  });
+
+  const contoso = await upsertSeedCompany(prisma, {
+    name: 'Contoso Foods',
+    legalName: 'Contoso Foods LLP',
+    domain: 'contoso.com',
+    priceTierId: standard.id,
+    packagingTypeId: packaging?.id ?? null,
+    billingContactName: 'Rahul Sen',
+    billingContactEmail: 'accounts@contoso.com',
+    address: {
+      label: 'Kitchen dock',
+      line1: '14 Industrial Layout',
+      city: 'Bengaluru',
+      postalCode: '560095',
+    },
+  });
+
+  const alice = await upsertSeedEmployee(prisma, {
+    companyId: northwind.id,
+    email: 'alice@northwind.com',
+    fullName: 'Alice Mehta',
+    defaultAddressId: northwind.addressId,
+    canChooseAddress: true,
+    canChooseDeliveryTime: true,
+    canChoosePackaging: false,
+    allergenId: dairy?.id ?? null,
+    dietaryTagId: vegetarian?.id ?? null,
+  });
+
+  await upsertSeedEmployee(prisma, {
+    companyId: contoso.id,
+    email: 'bob@contoso.com',
+    fullName: 'Bob Iyer',
+    defaultAddressId: contoso.addressId,
+    canChooseAddress: false,
+    canChooseDeliveryTime: false,
+    canChoosePackaging: false,
+    allergenId: null,
+    dietaryTagId: null,
+  });
+
+  if (northwind.ownerEmployeeId !== alice.id) {
+    await prisma.company.update({
+      where: { id: northwind.id },
+      data: { ownerEmployeeId: alice.id },
+    });
+  }
+}
+
+async function upsertSeedCompany(
+  prisma: SeedClient,
+  input: {
+    name: string;
+    legalName: string;
+    domain: string;
+    priceTierId: string;
+    packagingTypeId: string | null;
+    billingContactName: string;
+    billingContactEmail: string;
+    address: {
+      label: string;
+      line1: string;
+      city: string;
+      postalCode: string;
+    };
+  },
+): Promise<{ id: string; addressId: string; ownerEmployeeId: string | null }> {
+  const existingDomain = await prisma.companyDomain.findUnique({
+    where: { domain: input.domain },
+    select: { companyId: true },
+  });
+
+  const company = existingDomain
+    ? await prisma.company.update({
+        where: { id: existingDomain.companyId },
+        data: {
+          name: input.name,
+          legalName: input.legalName,
+          billingContactName: input.billingContactName,
+          billingContactEmail: input.billingContactEmail,
+        },
+        select: { id: true, ownerEmployeeId: true },
+      })
+    : await prisma.company.create({
+        data: {
+          name: input.name,
+          legalName: input.legalName,
+          priceTierId: input.priceTierId,
+          billingContactName: input.billingContactName,
+          billingContactEmail: input.billingContactEmail,
+          defaultPackagingTypeId: input.packagingTypeId,
+          leaveKitchenMinutes: 30,
+          defaultDeliveryTime: new Date('1970-01-01T12:30:00.000Z'),
+          active: true,
+          domains: { create: { domain: input.domain } },
+          workingDays: {
+            create: DEFAULT_WORKING_WEEK.map((weekday) => ({ weekday })),
+          },
+        },
+        select: { id: true, ownerEmployeeId: true },
+      });
+
+  const address = await prisma.companyAddress.findFirst({
+    where: { companyId: company.id, label: input.address.label },
+    select: { id: true },
+  });
+
+  const savedAddress =
+    address ??
+    (await prisma.companyAddress.create({
+      data: {
+        companyId: company.id,
+        ...input.address,
+        country: 'IN',
+        active: true,
+      },
+      select: { id: true },
+    }));
+
+  if (!existingDomain) {
+    await prisma.company.update({
+      where: { id: company.id },
+      data: { defaultAddressId: savedAddress.id },
+    });
+  }
+
+  return {
+    id: company.id,
+    addressId: savedAddress.id,
+    ownerEmployeeId: company.ownerEmployeeId,
+  };
+}
+
+async function upsertSeedEmployee(
+  prisma: SeedClient,
+  input: {
+    companyId: string;
+    email: string;
+    fullName: string;
+    defaultAddressId: string;
+    canChooseAddress: boolean;
+    canChooseDeliveryTime: boolean;
+    canChoosePackaging: boolean;
+    allergenId: string | null;
+    dietaryTagId: string | null;
+  },
+): Promise<{ id: string }> {
+  const employee = await prisma.customerEmployee.upsert({
+    where: { email: input.email },
+    update: {
+      fullName: input.fullName,
+      companyId: input.companyId,
+      defaultAddressId: input.defaultAddressId,
+      canChooseAddress: input.canChooseAddress,
+      canChooseDeliveryTime: input.canChooseDeliveryTime,
+      canChoosePackaging: input.canChoosePackaging,
+    },
+    create: {
+      companyId: input.companyId,
+      email: input.email,
+      fullName: input.fullName,
+      defaultAddressId: input.defaultAddressId,
+      canChooseAddress: input.canChooseAddress,
+      canChooseDeliveryTime: input.canChooseDeliveryTime,
+      canChoosePackaging: input.canChoosePackaging,
+      active: true,
+    },
+    select: { id: true },
+  });
+
+  if (input.allergenId) {
+    await prisma.customerEmployeeAllergen.upsert({
+      where: {
+        customerEmployeeId_allergenId: {
+          customerEmployeeId: employee.id,
+          allergenId: input.allergenId,
+        },
+      },
+      update: {},
+      create: {
+        customerEmployeeId: employee.id,
+        allergenId: input.allergenId,
+      },
+    });
+  }
+
+  if (input.dietaryTagId) {
+    await prisma.customerEmployeeDietaryTag.upsert({
+      where: {
+        customerEmployeeId_dietaryTagId: {
+          customerEmployeeId: employee.id,
+          dietaryTagId: input.dietaryTagId,
+        },
+      },
+      update: {},
+      create: {
+        customerEmployeeId: employee.id,
+        dietaryTagId: input.dietaryTagId,
+      },
+    });
+  }
+
+  return employee;
+}
+
 export function createSeedClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
 
@@ -315,10 +775,13 @@ async function main(): Promise<void> {
     await seedAuth(prisma);
     await seedKitchenSettings(prisma);
     await seedReferenceData(prisma);
+    await seedCatalogueSamples(prisma);
+    await seedPricing(prisma);
+    await seedCompanies(prisma);
     console.log(
       `Seeded ${Object.keys(ROLE_PERMISSIONS).length} roles, ` +
         `${ALL_PERMISSIONS.length} permissions and ${STAFF_ACCOUNTS.length} staff users, ` +
-        'plus kitchen settings and catalogue reference data.',
+        'plus kitchen settings, catalogue, price tiers, sample companies and employees.',
     );
   } finally {
     await prisma.$disconnect();

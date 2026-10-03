@@ -153,9 +153,10 @@ model Staff {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user         User?   @relation("StaffAccount", fields: [userId], references: [id], onDelete: SetNull)
-  drivenOrders Order[] @relation("OrderDriver")
-  drivenDrops  Drop[]  @relation("DropDriver")
+  user                User?     @relation("StaffAccount", fields: [userId], references: [id], onDelete: SetNull)
+  drivenOrders        Order[]   @relation("OrderDriver")
+  drivenDrops         Drop[]    @relation("DropDriver")
+  defaultForCompanies Company[] @relation("CompanyDefaultDriver")
 
   @@index([active])
 }
@@ -487,15 +488,23 @@ model PriceTier {
   /// BASE_MARKUP with 1500 basis points = base + 15%.
   strategy          PricingStrategy @default(EXPLICIT)
   markupBasisPoints Int?
+  /// Tier this one derives from when `strategy` is BASE_MARKUP
+  /// (for example Partner -> Standard). Null for root tiers. The chain is
+  /// validated in code: no self-reference, no cycles, bounded depth.
+  baseTierId        String?
   active            Boolean         @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  baseTier     PriceTier?        @relation("PriceTierDerivation", fields: [baseTierId], references: [id], onDelete: Restrict)
+  derivedTiers PriceTier[]       @relation("PriceTierDerivation")
   companies    Company[]
   dishPrices   DishTierPrice[]
   optionPrices OptionTierPrice[]
   orders       Order[]
+
+  @@index([baseTierId])
 }
 
 /// Explicit price of a dish in a tier. A missing row means "no explicit price
@@ -551,6 +560,14 @@ model Company {
   defaultAddressId       String?   @unique
   defaultDeliveryTime    DateTime? @db.Time(0)
   defaultPackagingTypeId String?
+  /// Minutes before `defaultDeliveryTime` at which an order for this company
+  /// must leave the kitchen. Dispatch planning (a later step) consumes it.
+  leaveKitchenMinutes    Int       @default(30)
+  /// Standing instructions shown to the driver on every delivery here.
+  driverInstructions     String?
+  /// Preferred driver. `SetNull` because losing a driver must not take the
+  /// company's configuration with it.
+  defaultDriverStaffId   String?
   active                 Boolean   @default(true)
 
   createdAt DateTime @default(now())
@@ -560,6 +577,7 @@ model Company {
   owner            CustomerEmployee? @relation("CompanyOwner", fields: [ownerEmployeeId], references: [id], onDelete: SetNull)
   defaultAddress   CompanyAddress?   @relation("CompanyDefaultAddress", fields: [defaultAddressId], references: [id], onDelete: SetNull)
   defaultPackaging PackagingType?    @relation("CompanyDefaultPackaging", fields: [defaultPackagingTypeId], references: [id], onDelete: Restrict)
+  defaultDriver    Staff?            @relation("CompanyDefaultDriver", fields: [defaultDriverStaffId], references: [id], onDelete: SetNull)
 
   domains          CompanyDomain[]
   addresses        CompanyAddress[]        @relation("CompanyAddresses")
@@ -575,6 +593,7 @@ model Company {
 
   @@index([priceTierId])
   @@index([active])
+  @@index([defaultDriverStaffId])
 }
 
 /// Email domains that map a signing-up person to a company.
@@ -607,10 +626,11 @@ model CompanyAddress {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company           Company  @relation("CompanyAddresses", fields: [companyId], references: [id], onDelete: Cascade)
-  defaultForCompany Company? @relation("CompanyDefaultAddress")
-  orders            Order[]
-  drops             Drop[]
+  company             Company            @relation("CompanyAddresses", fields: [companyId], references: [id], onDelete: Cascade)
+  defaultForCompany   Company?           @relation("CompanyDefaultAddress")
+  defaultForEmployees CustomerEmployee[] @relation("CustomerEmployeeDefaultAddress")
+  orders              Order[]
+  drops               Drop[]
 
   @@index([companyId, active])
 }
@@ -688,6 +708,10 @@ model CustomerEmployee {
   email                 String  @unique
   fullName              String
   phone                 String?
+  /// Where this employee normally receives food. Points at one of the
+  /// company's addresses rather than copying the street fields, so an edit to
+  /// the address is reflected everywhere that is not a historical snapshot.
+  defaultAddressId      String?
   /// Free-text notes in addition to the structured allergen/dietary links.
   allergyNotes          String?
   dietaryNotes          String?
@@ -700,14 +724,16 @@ model CustomerEmployee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company      Company                      @relation("CompanyEmployees", fields: [companyId], references: [id], onDelete: Restrict)
-  ownedCompany Company?                     @relation("CompanyOwner")
-  allergens    CustomerEmployeeAllergen[]
-  dietaryTags  CustomerEmployeeDietaryTag[]
-  orders       Order[]
-  orderEvents  OrderEvent[]                 @relation("OrderEventActorEmployee")
+  company        Company                      @relation("CompanyEmployees", fields: [companyId], references: [id], onDelete: Restrict)
+  defaultAddress CompanyAddress?              @relation("CustomerEmployeeDefaultAddress", fields: [defaultAddressId], references: [id], onDelete: SetNull)
+  ownedCompany   Company?                     @relation("CompanyOwner")
+  allergens      CustomerEmployeeAllergen[]
+  dietaryTags    CustomerEmployeeDietaryTag[]
+  orders         Order[]
+  orderEvents    OrderEvent[]                 @relation("OrderEventActorEmployee")
 
   @@index([companyId, active])
+  @@index([defaultAddressId])
 }
 
 model CustomerEmployeeAllergen {
