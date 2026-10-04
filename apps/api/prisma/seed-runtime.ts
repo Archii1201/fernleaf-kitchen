@@ -50,7 +50,7 @@ export async function createSeedScenario(prisma: SeedClient, input: {
   status: OrderStatus; driverId?: string; deliveryTime?: string;
 }, options: SeedOptions = {}): Promise<string> {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(8715, hashtext(${input.orderNumber}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(8715, hashtext(${input.orderNumber}))`;
     const existing = await tx.order.findUnique({ where: { orderNumber: input.orderNumber } });
     if (existing) return existing.id; // Never reset an existing reviewer's workflow/history.
     const client = transactionSeedClient(tx) as unknown as PrismaService;
@@ -133,7 +133,7 @@ export async function createSeedScenario(prisma: SeedClient, input: {
 export async function seedDailyReviewData(prisma: SeedClient, options: SeedOptions = {}): Promise<{ created: string[] }> {
   const time = seedTime(options);
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(8715, hashtext('demo:review:daily'))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(8715, hashtext('demo:review:daily'))`;
     const client = transactionSeedClient(tx);
     const tier = await tx.priceTier.findUniqueOrThrow({ where: { code: 'STANDARD' } });
     const dish = await tx.dish.findUniqueOrThrow({ where: { sku: 'FK-WRAP-001' } });

@@ -248,6 +248,7 @@ export async function seedDemoOperations(prisma, options = {}) {
     const historyOrder = await upsertDemoOrder(prisma, {
         key: 'demo:order:history:delivered',
         orderNumber: 'DEMO-HIST-001',
+        invoiceNumber: 'DEMO-INV-PAID',
         status: 'DELIVERED',
         deliveryDate: yesterday,
         company,
@@ -258,6 +259,7 @@ export async function seedDemoOperations(prisma, options = {}) {
     const todayOrder = await upsertDemoOrder(prisma, {
         key: 'demo:order:today:confirmed',
         orderNumber: 'DEMO-TODAY-001',
+        invoiceNumber: 'DEMO-INV-ISSUED',
         status: 'CONFIRMED',
         deliveryDate: utcToday,
         company,
@@ -277,6 +279,7 @@ export async function seedDemoOperations(prisma, options = {}) {
     }, options);
     const voidOrder = await upsertDemoOrder(prisma, {
         key: 'demo:order:history:void', orderNumber: 'DEMO-HIST-VOID-001',
+        invoiceNumber: 'DEMO-INV-VOID',
         status: 'DELIVERED', deliveryDate: relativeSeedDate(time, -2), company, employeeId: employee.id, wrap, station,
     }, options);
     if (historyOrder)
@@ -291,7 +294,16 @@ async function upsertDemoOrder(prisma, input, options = {}) {
     if (!address || !input.company.priceTierId) {
         return null;
     }
-    const existing = await prisma.order.findUnique({ where: { orderNumber: input.orderNumber }, select: { id: true } });
+    const existing = await prisma.order.findUnique({
+        where: { orderNumber: input.orderNumber },
+        select: { id: true, invoice: { select: { invoiceNumber: true } } },
+    });
+    // A reviewer may have billed this fixture through the application. Preserve
+    // that billing history instead of repairing or rebilling it as a demo invoice.
+    if (existing?.invoice && existing.invoice.invoiceNumber !== input.invoiceNumber) {
+        console.log(`Preserving ${input.orderNumber}: linked to ${existing.invoice.invoiceNumber}`);
+        return null;
+    }
     const orderId = existing ? await upsertFinancialDemoOrder(prisma, {
         orderNumber: input.orderNumber, companyId: input.company.id,
         customerEmployeeId: input.employeeId, status: input.status,
@@ -311,9 +323,6 @@ async function upsertDemoOrder(prisma, input, options = {}) {
     });
     return orderId;
 }
-// ============================================================
-// RICH DEMO DATA
-// ============================================================
 export async function seedRichDemoData(prisma, options = {}) {
     console.log('🌱 Seeding rich demo data...');
     const hot = await prisma.kitchenStation.findUnique({
@@ -335,9 +344,6 @@ export async function seedRichDemoData(prisma, options = {}) {
         console.log('⚠️ Required reference data missing. Skipping rich demo data.');
         return;
     }
-    // ----------------------------------------------------------
-    // 1. PRICE TIERS
-    // ----------------------------------------------------------
     const standard = await prisma.priceTier.findUnique({
         where: { code: 'STANDARD' },
     });
@@ -351,9 +357,6 @@ export async function seedRichDemoData(prisma, options = {}) {
         console.log('⚠️ Standard price tier missing.');
         return;
     }
-    // ----------------------------------------------------------
-    // 2. ADDITIONAL COMPANIES
-    // ----------------------------------------------------------
     const companies = [
         {
             name: 'Tata Digital',
@@ -484,9 +487,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             addressId: address.id,
         });
     }
-    // ----------------------------------------------------------
-    // 3. EMPLOYEES
-    // ----------------------------------------------------------
     const employeeNames = [
         ['Aarav Shah', 'aarav'],
         ['Diya Mehta', 'diya'],
@@ -502,7 +502,6 @@ export async function seedRichDemoData(prisma, options = {}) {
     const savedEmployees = [];
     for (let companyIndex = 0; companyIndex < savedCompanies.length; companyIndex++) {
         const company = savedCompanies[companyIndex];
-        // 4 employees per company
         for (let employeeIndex = 0; employeeIndex < 4; employeeIndex++) {
             const [name, username] = employeeNames[(companyIndex * 4 + employeeIndex) % employeeNames.length];
             const email = `${username}.${companyIndex + 1}@${company.domain}`;
@@ -529,9 +528,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             });
         }
     }
-    // ----------------------------------------------------------
-    // 4. MORE DISHES
-    // ----------------------------------------------------------
     const dishDefinitions = [
         ['Butter Chicken', 1450, 'HOT'],
         ['Paneer Tikka', 1050, 'HOT'],
@@ -601,9 +597,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             stationName: station.name,
         });
     }
-    // ----------------------------------------------------------
-    // 5. PRICE FOR EVERY TIER
-    // ----------------------------------------------------------
     const tiers = [
         standard,
         partner,
@@ -638,9 +631,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             });
         }
     }
-    // ----------------------------------------------------------
-    // 6. OPTION GROUPS
-    // ----------------------------------------------------------
     const optionGroups = [
         {
             code: 'PROTEIN',
@@ -696,9 +686,6 @@ export async function seedRichDemoData(prisma, options = {}) {
         });
         savedGroups[group.code] = saved;
     }
-    // ----------------------------------------------------------
-    // 7. OPTIONS
-    // ----------------------------------------------------------
     const demoOptions = [
         ['PROTEIN-CHICKEN', 'Grilled Chicken', 300, 'PROTEIN'],
         ['PROTEIN-PANEER', 'Paneer', 200, 'PROTEIN'],
@@ -716,8 +703,6 @@ export async function seedRichDemoData(prisma, options = {}) {
     ];
     const savedOptions = [];
     for (let i = 0; i < demoOptions.length; i++) {
-        // IMPORTANT:
-        // Get one option from the array.
         const [code, name, costCents, groupCode] = demoOptions[i];
         const option = await prisma.option.upsert({
             where: {
@@ -764,9 +749,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             },
         });
     }
-    // ----------------------------------------------------------
-    // 8. MENU CATEGORIES
-    // ----------------------------------------------------------
     const categories = [
         'Breakfast',
         'Indian Mains',
@@ -782,7 +764,6 @@ export async function seedRichDemoData(prisma, options = {}) {
         const name = categories[i];
         const category = await prisma.menuCategory.upsert({
             where: {
-                // Names are unique too; reuse the basic seed's "Salads" category.
                 name,
             },
             update: {
@@ -805,7 +786,6 @@ export async function seedRichDemoData(prisma, options = {}) {
         });
         savedCategories.push(category);
     }
-    // Put rich dishes into categories.
     for (let i = 0; i < savedDishes.length; i++) {
         const dish = savedDishes[i];
         const category = savedCategories[i % savedCategories.length];
@@ -828,9 +808,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             },
         });
     }
-    // ----------------------------------------------------------
-    // 9. LINK OPTION GROUPS TO DISHES
-    // ----------------------------------------------------------
     for (let i = 0; i < savedDishes.length; i++) {
         const dish = savedDishes[i];
         const groupsToAttach = i % 4 === 0
@@ -859,9 +836,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             });
         }
     }
-    // ----------------------------------------------------------
-    // 10. REALISTIC ORDERS
-    // ----------------------------------------------------------
     const driver = await prisma.staff.findUnique({
         where: {
             staffCode: 'DRIVER-001',
@@ -871,9 +845,6 @@ export async function seedRichDemoData(prisma, options = {}) {
     const todayUtc = relativeSeedDate(time, 0);
     const dateOffset = (days) => relativeSeedDate(time, days);
     let orderNumber = 100;
-    // ----------------------------------------------------------
-    // PAST ORDERS
-    // ----------------------------------------------------------
     const pastStatuses = [
         'DELIVERED',
         'DELIVERED',
@@ -899,9 +870,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             dish,
         }, options);
     }
-    // ----------------------------------------------------------
-    // TODAY ORDERS
-    // ----------------------------------------------------------
     const todayStatuses = [
         'CONFIRMED',
         'CONFIRMED',
@@ -925,9 +893,6 @@ export async function seedRichDemoData(prisma, options = {}) {
             dish,
         }, options);
     }
-    // ----------------------------------------------------------
-    // FUTURE ORDERS
-    // ----------------------------------------------------------
     const futureStatuses = [
         'DRAFT',
         'PLACED',
@@ -963,9 +928,6 @@ export async function seedRichDemoData(prisma, options = {}) {
     console.log(`   Dishes: ${savedDishes.length}`);
     console.log(`   Categories: ${savedCategories.length}`);
 }
-// ============================================================
-// CREATE REALISTIC ORDER
-// ============================================================
 async function createRichOrder(prisma, input, options = {}) {
     const existing = await prisma.order.findUnique({ where: { orderNumber: input.orderNumber }, select: { id: true } });
     if (!existing)
@@ -984,3 +946,4 @@ async function createRichOrder(prisma, input, options = {}) {
         leaveKitchenMinutes: 60,
     }, input.dish.id);
 }
+//# sourceMappingURL=seed-demo.js.map

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { type RoleName } from '../src/auth/permissions.js';
-import type { SeedOptions } from './seed-runtime.js';
+import { type SeedOptions } from './seed-runtime.js';
 export declare const STAFF_ACCOUNTS: ReadonlyArray<{
     email: string;
     role: RoleName;

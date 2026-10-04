@@ -8,7 +8,6 @@ import { ALL_PERMISSIONS, ROLE_PERMISSIONS, ROLES, } from '../src/auth/permissio
 import { seedDemoOperations, seedExtendedCatalogue, seedExtendedCompanies, seedExtendedPricing, seedRichDemoData, } from './seed-demo.js';
 import { seedDailyReviewData, transactionSeedClient } from './seed-runtime.js';
 import { WEEKDAYS } from '../src/kitchen/time/weekday.js';
-/** The four staff accounts required by the assignment. */
 export const STAFF_ACCOUNTS = [
     {
         email: 'admin@test.com',
@@ -36,14 +35,6 @@ export const STAFF_ACCOUNTS = [
     },
 ];
 export const SEED_PASSWORD = 'Test@1234';
-/**
- * Idempotent seed of roles, permissions and the four staff logins.
- *
- * Every write is an upsert keyed on a natural unique column (permission key,
- * role name, user email), and role grants are reconciled rather than appended,
- * so running this repeatedly converges on the same state instead of
- * duplicating rows.
- */
 export async function seedAuth(prisma) {
     await seedPermissions(prisma);
     await seedRolesWithGrants(prisma);
@@ -78,8 +69,6 @@ async function seedRolesWithGrants(prisma) {
                 create: { roleId: role.id, permissionId: permission.id },
             });
         }
-        // Reconcile: a permission removed from the catalogue above must also be
-        // revoked here, otherwise re-seeding would only ever widen a role.
         await prisma.rolePermission.deleteMany({
             where: {
                 roleId: role.id,
@@ -111,9 +100,6 @@ async function seedStaffUsers(prisma) {
             await upsertStaffProfile(prisma, created.id, account);
             continue;
         }
-        // Only re-hash when the stored hash no longer matches the seed password;
-        // bcrypt output is salted, so comparing hashes directly would always
-        // differ and rewrite the row on every run.
         const passwordMatches = await bcrypt.compare(SEED_PASSWORD, existing.passwordHash);
         await prisma.user.update({
             where: { id: existing.id },
@@ -130,10 +116,6 @@ async function seedStaffUsers(prisma) {
         await upsertStaffProfile(prisma, existing.id, account);
     }
 }
-/**
- * Staff accounts also get the operational profile that Step 5's staff
- * endpoints edit. Keyed on the unique `userId`, so re-seeding updates in place.
- */
 async function upsertStaffProfile(prisma, userId, account) {
     await prisma.staff.upsert({
         where: { userId },
@@ -146,7 +128,6 @@ async function upsertStaffProfile(prisma, userId, account) {
         },
     });
 }
-/** Default cutoff: 16:00 local, two kitchen working days before delivery. */
 export const DEFAULT_CUTOFF_TIME = new Date('1970-01-01T16:00:00.000Z');
 export const DEFAULT_CUTOFF_WORKING_DAYS = 2;
 export const SETTINGS_SINGLETON_ID = 'singleton';
@@ -157,10 +138,6 @@ const DEFAULT_WORKING_WEEK = [
     'THURSDAY',
     'FRIDAY',
 ];
-/**
- * Kitchen settings and the working week. `update: {}` keeps an admin's later
- * changes intact: re-seeding must not silently reset the cutoff.
- */
 export async function seedKitchenSettings(prisma) {
     await prisma.kitchenSettings.upsert({
         where: { id: SETTINGS_SINGLETON_ID },
@@ -209,7 +186,6 @@ const PACKAGING_TYPES = [
     { code: 'BUFFET', name: 'Buffet trays' },
     { code: 'BULK', name: 'Bulk containers' },
 ];
-/** Reference lookups the catalogue depends on. Keyed on their unique codes. */
 export async function seedReferenceData(prisma) {
     for (const allergen of ALLERGENS) {
         await prisma.allergen.upsert({
@@ -247,11 +223,6 @@ export async function seedReferenceData(prisma) {
         });
     }
 }
-/**
- * A small, realistic catalogue. Pricing needs something to price, and the
- * e2e specs need stable rows. Keyed on SKU/code so re-running updates in
- * place instead of duplicating.
- */
 const SAMPLE_DISHES = [
     {
         sku: 'FK-CURRY-001',
@@ -334,17 +305,6 @@ export async function seedCatalogueSamples(prisma) {
         });
     }
 }
-/**
- * Three tiers that exercise every derivation strategy:
- *
- *   Standard   - the default, manually priced
- *   Enterprise - cost x 2.4 (24000 basis points)
- *   Partner    - Standard + 15% (1500 basis points), with one override
- *
- * `FK-SPECIAL-001` is deliberately left unpriced on Standard so the
- * missing-price path (and therefore the "hidden from the menu" rule) has a
- * real example in every environment.
- */
 const STANDARD_DISH_PRICES = {
     'FK-CURRY-001': 1_799,
     'FK-WRAP-001': 2_099,
@@ -353,14 +313,12 @@ const STANDARD_DISH_PRICES = {
 const STANDARD_OPTION_PRICES = {
     'FK-OPT-EXTRA-PANEER': 350,
 };
-/** One manual override on a derived tier, to prove overrides win. */
 const PARTNER_DISH_OVERRIDES = {
     'FK-WRAP-001': 2_250,
 };
 export async function seedPricing(prisma) {
     const standard = await prisma.priceTier.upsert({
         where: { code: 'STANDARD' },
-        // Never reset the default flag or the rule an admin may have changed.
         update: { name: 'Standard' },
         create: {
             code: 'STANDARD',
@@ -433,14 +391,6 @@ async function upsertDishPrice(prisma, sku, priceTierId, priceCents) {
         create: { dishId: dish.id, priceTierId, priceCents },
     });
 }
-/**
- * Two sample companies and a handful of employees. Keyed on the globally
- * unique email domain so re-seeding updates in place and never duplicates.
- *
- * Alice starts at Northwind. The e2e suite (and later the Orders step) relies
- * on orders storing their own `companyId`, so moving her later must not
- * rewrite history.
- */
 export async function seedCompanies(prisma) {
     const standard = await prisma.priceTier.findUnique({
         where: { code: 'STANDARD' },
@@ -636,11 +586,6 @@ async function upsertSeedEmployee(prisma, input) {
     }
     return employee;
 }
-/**
- * Menu sections the resolver browses. `off-menu` is secret: omitted from the
- * normal listing, reachable by slug. The seasonal special is left unpriced
- * on Standard so the missing-price path is real.
- */
 const SAMPLE_CATEGORIES = [
     {
         slug: 'mains',
@@ -667,7 +612,7 @@ const SAMPLE_CATEGORIES = [
 export async function seedMenu(prisma) {
     for (const category of SAMPLE_CATEGORIES) {
         const saved = await prisma.menuCategory.upsert({
-            where: { slug: category.slug },
+            where: { name: category.name },
             update: {
                 name: category.name,
                 displayOrder: category.displayOrder,
@@ -715,7 +660,7 @@ export async function databaseIsEmpty(prisma) {
 export async function seedAll(prisma, options = {}) {
     const evaluated = { ...options, now: options.now ?? new Date() };
     await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw `SELECT pg_advisory_xact_lock(8715, hashtext('demo:seed:all'))`;
+        await tx.$executeRaw `SELECT pg_advisory_xact_lock(8715, hashtext('demo:seed:all'))`;
         const client = transactionSeedClient(tx);
         await seedAuth(client);
         await seedKitchenSettings(client);
@@ -730,12 +675,8 @@ export async function seedAll(prisma, options = {}) {
         await seedDemoOperations(client, evaluated);
         await seedRichDemoData(client, evaluated);
         await seedDailyReviewData(client, evaluated);
-    }, { timeout: 90_000 });
+    }, { timeout: 300_000 });
 }
-/**
- * Empty databases get the full demo. A populated database is left alone
- * unless FORCE_SEED=true. Re-runs are upsert-only and do not delete reviewer rows.
- */
 export async function seedIfNeeded(prisma, options = {}) {
     const force = options.force ?? process.env.FORCE_SEED === 'true';
     if (!force && !(await databaseIsEmpty(prisma))) {
@@ -772,3 +713,4 @@ const isDirectRun = process.argv[1] !== undefined &&
 if (isDirectRun) {
     await main();
 }
+//# sourceMappingURL=seed.js.map

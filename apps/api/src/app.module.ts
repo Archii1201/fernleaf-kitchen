@@ -11,7 +11,6 @@ import { FilesModule } from './files/files.module.js';
 import { KitchenModule } from './kitchen/kitchen.module.js';
 import { MenuModule } from './menu/menu.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
-import { DemoModule } from './demo/demo.module.js';
 import { DispatchModule } from './dispatch/dispatch.module.js';
 import { DriverModule } from './driver/driver.module.js';
 import { OrdersModule } from './orders/orders.module.js';
@@ -41,7 +40,6 @@ import { StaffModule } from './staff/staff.module.js';
     OrdersModule,
     BillingModule,
     DashboardModule,
-    DemoModule,
     DispatchModule,
     DriverModule,
     HealthModule,

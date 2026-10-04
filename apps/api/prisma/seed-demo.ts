@@ -270,6 +270,7 @@ export async function seedDemoOperations(prisma: SeedClient, options: SeedOption
   const historyOrder = await upsertDemoOrder(prisma, {
     key: 'demo:order:history:delivered',
     orderNumber: 'DEMO-HIST-001',
+    invoiceNumber: 'DEMO-INV-PAID',
     status: 'DELIVERED',
     deliveryDate: yesterday,
     company,
@@ -280,6 +281,7 @@ export async function seedDemoOperations(prisma: SeedClient, options: SeedOption
   const todayOrder = await upsertDemoOrder(prisma, {
     key: 'demo:order:today:confirmed',
     orderNumber: 'DEMO-TODAY-001',
+    invoiceNumber: 'DEMO-INV-ISSUED',
     status: 'CONFIRMED',
     deliveryDate: utcToday,
     company,
@@ -300,6 +302,7 @@ export async function seedDemoOperations(prisma: SeedClient, options: SeedOption
 
   const voidOrder = await upsertDemoOrder(prisma, {
     key: 'demo:order:history:void', orderNumber: 'DEMO-HIST-VOID-001',
+    invoiceNumber: 'DEMO-INV-VOID',
     status: 'DELIVERED', deliveryDate: relativeSeedDate(time, -2), company, employeeId: employee.id, wrap, station,
   }, options);
   if (historyOrder) await upsertFinancialDemoInvoice(prisma, 'DEMO-INV-PAID', historyOrder, 'PAID');
@@ -312,6 +315,7 @@ async function upsertDemoOrder(
   input: {
     key: string;
     orderNumber: string;
+    invoiceNumber?: string;
     status: 'PLACED' | 'CONFIRMED' | 'DELIVERED';
     deliveryDate: Date;
     company: {
@@ -337,7 +341,16 @@ async function upsertDemoOrder(
     return null;
   }
 
-  const existing = await prisma.order.findUnique({ where: { orderNumber: input.orderNumber }, select: { id: true } });
+  const existing = await prisma.order.findUnique({
+    where: { orderNumber: input.orderNumber },
+    select: { id: true, invoice: { select: { invoiceNumber: true } } },
+  });
+  // A reviewer may have billed this fixture through the application. Preserve
+  // that billing history instead of repairing or rebilling it as a demo invoice.
+  if (existing?.invoice && existing.invoice.invoiceNumber !== input.invoiceNumber) {
+    console.log(`Preserving ${input.orderNumber}: linked to ${existing.invoice.invoiceNumber}`);
+    return null;
+  }
   const orderId = existing ? await upsertFinancialDemoOrder(prisma, {
     orderNumber: input.orderNumber, companyId: input.company.id,
     customerEmployeeId: input.employeeId, status: input.status,

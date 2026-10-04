@@ -800,7 +800,7 @@ const SAMPLE_CATEGORIES = [
 export async function seedMenu(prisma: SeedClient): Promise<void> {
   for (const category of SAMPLE_CATEGORIES) {
     const saved = await prisma.menuCategory.upsert({
-      where: { slug: category.slug },
+      where: { name: category.name },
       update: {
         name: category.name,
         displayOrder: category.displayOrder,
@@ -853,7 +853,7 @@ export async function databaseIsEmpty(prisma: SeedClient): Promise<boolean> {
 export async function seedAll(prisma: SeedClient, options: SeedOptions = {}): Promise<void> {
   const evaluated = { ...options, now: options.now ?? new Date() };
   await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(8715, hashtext('demo:seed:all'))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(8715, hashtext('demo:seed:all'))`;
     const client = transactionSeedClient(tx);
     await seedAuth(client);
     await seedKitchenSettings(client);
@@ -868,7 +868,7 @@ export async function seedAll(prisma: SeedClient, options: SeedOptions = {}): Pr
     await seedDemoOperations(client, evaluated);
     await seedRichDemoData(client, evaluated);
     await seedDailyReviewData(client, evaluated);
-  }, { timeout: 90_000 });
+  }, { timeout: 300_000 });
 }
 
 /**
