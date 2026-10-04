@@ -12,22 +12,6 @@ const EXTRA_COMPANIES = [
     line1: '88 MG Road',
     postalCode: '560001',
   },
-  {
-    name: 'Initech Labs',
-    domain: 'initech.com',
-    legalName: 'Initech Labs LLP',
-    city: 'Bengaluru',
-    line1: '12 Outer Ring Road',
-    postalCode: '560103',
-  },
-  {
-    name: 'Umbrella Health',
-    domain: 'umbrella.health',
-    legalName: 'Umbrella Health Pvt Ltd',
-    city: 'Bengaluru',
-    line1: '3 Whitefield Main',
-    postalCode: '560066',
-  },
 ] as const;
 
 export async function seedExtendedCatalogue(prisma: SeedClient): Promise<void> {
@@ -39,11 +23,7 @@ export async function seedExtendedCatalogue(prisma: SeedClient): Promise<void> {
   }
 
   const names = [
-    'Dal Tadka', 'Jeera Rice', 'Veg Biryani', 'Chicken Biryani', 'Egg Curry',
-    'Palak Paneer', 'Chana Masala', 'Rajma Bowl', 'Veg Pulao', 'Fish Fry',
-    'Mutton Keema', 'Tandoori Chicken', 'Veg Korma', 'Sambar Rice', 'Curd Rice',
-    'Masala Dosa', 'Idli Sambar', 'Medu Vada', 'Poha Bowl', 'Upma Cup',
-    'Fruit Bowl', 'Raita Cup',
+    'Dal Tadka', 'Jeera Rice', 'Veg Biryani', 'Chicken Biryani', 'Palak Paneer',
   ];
 
   for (const [index, name] of names.entries()) {
@@ -60,7 +40,7 @@ export async function seedExtendedCatalogue(prisma: SeedClient): Promise<void> {
         costCents: 600 + index * 35,
         kitchenStationId: station.id,
         portionSizeId: portion.id,
-        active: index !== 21,
+        active: index !== 4,
       },
     });
   }
@@ -139,12 +119,12 @@ export async function seedExtendedCatalogue(prisma: SeedClient): Promise<void> {
   for (const [index, dish] of dishes.entries()) {
     await prisma.menuCategoryDish.upsert({
       where: { menuCategoryId_dishId: { menuCategoryId: mains.id, dishId: dish.id } },
-      update: { displayOrder: index, active: dish.sku !== 'FK-DEMO-022' },
+      update: { displayOrder: index, active: dish.sku !== 'FK-DEMO-005' },
       create: {
         menuCategoryId: mains.id,
         dishId: dish.id,
         displayOrder: index,
-        active: dish.sku !== 'FK-DEMO-022',
+        active: dish.sku !== 'FK-DEMO-005',
       },
     });
   }
@@ -376,6 +356,11 @@ async function upsertDemoOrder(
 // ============================================================
 
 export async function seedRichDemoData(prisma: SeedClient, options: SeedOptions = {}): Promise<void> {
+  // Rich demo bulk data skipped to make seed lightweight and fast on Neon.
+  return;
+}
+
+async function _unused_seedRichDemoData(prisma: SeedClient, options: SeedOptions = {}): Promise<void> {
   console.log('🌱 Seeding rich demo data...');
 
   const hot = await prisma.kitchenStation.findUnique({

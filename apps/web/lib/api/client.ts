@@ -2,8 +2,7 @@
  * Requests go through the Next.js `/api` rewrite by default, so the httpOnly
  * session cookie set by NestJS stays first-party and is never readable here.
  */
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api';
-
+export const API_URL = '/api';
 export interface Paginated<T> {
   data: T[];
   meta: { page: number; limit: number; total: number; totalPages: number };
