@@ -70,7 +70,7 @@ const REF_TABS: RefTabMeta[] = [
 
 export default function CataloguePage() {
   const { can } = useAuth();
-  const canEdit = can('catalogue.edit') || can('catalogue.admin');
+  const canEdit = can('catalogue.manage');
 
   const [activeTab, setActiveTab] = useState<RefKind>('kitchen-stations');
   const [search, setSearch] = useState('');

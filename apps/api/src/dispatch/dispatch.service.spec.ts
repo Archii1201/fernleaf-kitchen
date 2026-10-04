@@ -48,6 +48,7 @@ describe('DispatchService', () => {
         upsert: vi.fn().mockResolvedValue(drop),
       },
       dropOrder: {
+        findUnique: vi.fn().mockResolvedValue({ dropId: 'drop-1' }),
         findMany: vi.fn().mockResolvedValue([{ order: { status: 'DISPATCH_READY' } }]),
         upsert: vi.fn(),
       },
@@ -72,6 +73,12 @@ describe('DispatchService', () => {
   it('marks kitchen-ready as dispatch-ready once', async () => {
     const { service, tx } = setup('READY');
     await service.markOrderReady('ord-1', 'user-1');
+    expect(tx.$executeRaw.mock.calls[0]).toEqual([
+      expect.arrayContaining([expect.stringContaining('FROM "Drop"')]), 'drop-1',
+    ]);
+    expect(tx.$executeRaw.mock.calls[1]).toEqual([
+      expect.arrayContaining([expect.stringContaining('FROM "Order"')]), 'ord-1',
+    ]);
    expect(tx.order.update).toHaveBeenCalledWith(
   expect.objectContaining({
     data: expect.objectContaining({

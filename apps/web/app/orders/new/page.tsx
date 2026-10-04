@@ -11,6 +11,7 @@ import { Select } from '../../../components/ui/Select';
 import { SkeletonRows } from '../../../components/ui/Skeleton';
 import { EmptyState, ErrorState, Feedback } from '../../../components/ui/EmptyState';
 import { Icon } from '../../../components/ui/Icon';
+import { OrderCombinationEditor } from '../../../components/orders/OrderCombinationEditor';
 import {
   createOrder,
   placeOrder,
@@ -21,7 +22,8 @@ import {
 } from '../../../lib/api/orders';
 import { listCompanies } from '../../../lib/api/companies';
 import { listEmployees, type Employee } from '../../../lib/api/employees';
-import { listDishes, listRefs, type Dish } from '../../../lib/api/catalogue';
+import { listRefs } from '../../../lib/api/catalogue';
+import type { CombinationInput } from '../../../lib/order-combinations';
 import { previewMenu, type MenuPreview } from '../../../lib/api/menu';
 import { useLoad, useAction } from '../../../lib/use-load';
 import { formatDate, formatDateTime, rupees, todayIso } from '../../../lib/format';
@@ -35,9 +37,7 @@ interface SelectedItem {
   sku: string;
   quantity: number;
   notes: string;
-  optionGroups: Dish['optionGroups'];
-  // optionGroupId -> array of selected optionIds
-  selections: Record<string, string[]>;
+  combinations: CombinationInput[];
 }
 
 export default function NewOrderPage() {
@@ -69,6 +69,9 @@ export default function NewOrderPage() {
   const [quote, setQuote] = useState<OrderQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const quantitiesReady = items.every((item) => item.combinations.length > 0 &&
+    item.combinations.every((combination) => Number.isInteger(combination.quantity) && combination.quantity > 0) &&
+    item.combinations.reduce((sum, combination) => sum + combination.quantity, 0) === item.quantity);
 
   // Fetch Companies
   const { data: companiesData } = useLoad(
@@ -120,13 +123,6 @@ export default function NewOrderPage() {
     ['new-order-menu', companyId, employeeId],
   );
 
-  // Fetch all catalogue dishes to have optionGroups info
-  const { data: allDishesData } = useLoad(
-    () => listDishes({ limit: 100 }),
-    ['new-order-dishes-meta'],
-  );
-  const allDishes = allDishesData?.data ?? [];
-
   // Dish Selection Helpers
   const handleToggleDish = (dishId: string, dishName: string, sku: string, categoryId?: string) => {
     setItems((prev) => {
@@ -134,7 +130,6 @@ export default function NewOrderPage() {
       if (existing) {
         return prev.filter((i) => i.dishId !== dishId);
       }
-      const fullDish = allDishes.find((d) => d.id === dishId);
       return [
         ...prev,
         {
@@ -144,8 +139,7 @@ export default function NewOrderPage() {
           sku,
           quantity: 1,
           notes: '',
-          optionGroups: fullDish?.optionGroups ?? [],
-          selections: {},
+          combinations: [{ quantity: 1, selections: [] }],
         },
       ];
     });
@@ -157,7 +151,13 @@ export default function NewOrderPage() {
         .map((item) => {
           if (item.dishId === dishId) {
             const nextQty = item.quantity + delta;
-            return nextQty > 0 ? { ...item, quantity: nextQty } : null;
+            return nextQty > 0 ? {
+              ...item,
+              quantity: nextQty,
+              combinations: item.combinations.length === 1
+                ? [{ ...item.combinations[0], quantity: nextQty }]
+                : item.combinations,
+            } : null;
           }
           return item;
         })
@@ -168,24 +168,12 @@ export default function NewOrderPage() {
   // Build the Authoritative Input
   const buildOrderInput = (): CreateOrderInput => {
     const lines: OrderLineInput[] = items.map((item) => {
-      const selections = Object.entries(item.selections)
-        .filter(([, optIds]) => optIds.length > 0)
-        .map(([optionGroupId, optionIds]) => ({
-          optionGroupId,
-          optionIds,
-        }));
-
       return {
         dishId: item.dishId,
         categoryId: item.categoryId,
         quantity: item.quantity,
         notes: item.notes.trim() || undefined,
-        combinations: [
-          {
-            quantity: item.quantity,
-            selections: selections.length > 0 ? selections : undefined,
-          },
-        ],
+        combinations: item.combinations,
       };
     });
 
@@ -203,6 +191,7 @@ export default function NewOrderPage() {
   // Step 5: Fetch Quote
   const fetchAuthoritativeQuote = async () => {
     setQuoteLoading(true);
+    setQuote(null);
     setQuoteError(null);
     try {
       const payload = buildOrderInput();
@@ -614,7 +603,6 @@ export default function NewOrderPage() {
           ) : (
             <div className="space-y-6">
               {items.map((item) => {
-                const hasGroups = item.optionGroups && item.optionGroups.length > 0;
                 return (
                   <div
                     key={item.dishId}
@@ -646,36 +634,13 @@ export default function NewOrderPage() {
                       </div>
                     </div>
 
-                    {hasGroups ? (
-                      <div className="space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-[var(--navy)]">
-                          Option Groups:
-                        </p>
-                        {item.optionGroups.map((group) => {
-                          return (
-                            <div key={group.id} className="rounded bg-white p-3 border border-[var(--border)]">
-                              <div className="flex items-center justify-between">
-                                <span className="font-medium text-sm text-[var(--navy)]">
-                                  {group.name}
-                                </span>
-                                {group.required ? (
-                                  <Badge tone="warning">Required</Badge>
-                                ) : (
-                                  <Badge tone="muted">Optional</Badge>
-                                )}
-                              </div>
-                              <p className="mt-1 text-xs text-[var(--muted)]">
-                                Group Code: {group.code}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-xs italic text-[var(--muted)]">
-                        No configurable option groups for this dish. Standard preparation applies.
-                      </p>
-                    )}
+                    <OrderCombinationEditor
+                      dishId={item.dishId}
+                      quantity={item.quantity}
+                      combinations={item.combinations}
+                      onChange={(combinations) => setItems((prev) => prev.map((current) =>
+                        current.dishId === item.dishId ? { ...current, combinations } : current))}
+                    />
 
                     <Input
                       label="Item Preparation Notes (Optional)"
@@ -700,7 +665,7 @@ export default function NewOrderPage() {
             </Button>
             <Button
               variant="primary"
-              disabled={items.length === 0}
+              disabled={items.length === 0 || !quantitiesReady}
               onClick={() => {
                 setStep(5);
                 void fetchAuthoritativeQuote();
@@ -828,6 +793,13 @@ export default function NewOrderPage() {
                           <td className="px-4 py-3">
                             <span className="font-mono text-xs uppercase text-[var(--muted)]">{line.sku}</span>
                             <p className="font-medium text-[var(--navy)]">{line.name}</p>
+                            {line.combinations.map((combination, index) => (
+                              <p key={combination.signature} className="mt-1 text-xs text-[var(--muted)]">
+                                Combination {index + 1}: {combination.quantity} × {rupees(combination.unitPriceCents)}
+                                {' '}= {rupees(combination.totalCents)}
+                                {' '}({combination.options.map((option) => option.optionName).join(', ') || 'Standard'})
+                              </p>
+                            ))}
                           </td>
                           <td className="px-4 py-3 font-semibold">{line.quantity}</td>
                           <td className="px-4 py-3 text-[var(--muted)]">{rupees(line.unitPriceCents)}</td>

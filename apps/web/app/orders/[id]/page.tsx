@@ -14,8 +14,12 @@ import { ErrorState, Feedback } from '../../../components/ui/EmptyState';
 import { OrderStatusBadge } from '../../../components/orders/OrderStatusBadge';
 import { OrderTimeline } from '../../../components/orders/OrderTimeline';
 import { OrderItemCard } from '../../../components/orders/OrderItemCard';
+import { OrderCombinationEditor } from '../../../components/orders/OrderCombinationEditor';
+import { combinationInput } from '../../../lib/order-combinations';
 import {
   getOrder,
+  replaceOrderLines,
+  type OrderLineInput,
   placeOrder,
   cancelOrder,
   rejectOrder,
@@ -37,8 +41,9 @@ export default function OrderDetailPage() {
 
   const { can } = useAuth();
   const canEdit = can('orders.edit');
+  const canConfirm = can('orders.confirm');
   const canOverride = can('orders.override');
-  const canCredit = can('billing.edit') || can('orders.override');
+  const canCredit = can('billing.manage');
 
   const action = useAction();
 
@@ -80,6 +85,18 @@ export default function OrderDetailPage() {
   const [creditModalOpen, setCreditModalOpen] = useState(false);
   const [creditAmount, setCreditAmount] = useState('');
   const [creditReason, setCreditReason] = useState('');
+  const [editLines, setEditLines] = useState<OrderLineInput[] | null>(null);
+  const [editVersion, setEditVersion] = useState(0);
+
+  const handleSaveLines = async () => {
+    if (!order || !editLines) return;
+    const saved = await action.run(
+      () => replaceOrderLines(order.id, editVersion, editLines), 'Order combinations updated');
+    if (saved) {
+      setEditLines(null);
+      reload();
+    }
+  };
 
   // Handlers
   const handlePlaceOrder = async () => {
@@ -218,6 +235,16 @@ export default function OrderDetailPage() {
             </Button>
 
             <OrderStatusBadge status={order.status} />
+            {canEdit && !order.invoice && ['DRAFT', 'PLACED', 'CONFIRMED'].includes(order.status) ? (
+              <Button variant="ghost" onClick={() => {
+                setEditVersion(order.version);
+                setEditLines(order.lines.map((line) => ({
+                  dishId: line.dishId, quantity: line.quantity,
+                  notes: line.notes ?? undefined,
+                  combinations: line.combinations.map(combinationInput),
+                })));
+              }}>Edit Combinations</Button>
+            ) : null}
 
             {/* DRAFT ACTIONS */}
             {isDraft && canEdit ? (
@@ -227,7 +254,7 @@ export default function OrderDetailPage() {
             ) : null}
 
             {/* PLACED ACTIONS */}
-            {isPlaced && canEdit ? (
+            {isPlaced && canConfirm ? (
               <Button
                 variant="danger"
                 busy={action.busy}
@@ -267,6 +294,25 @@ export default function OrderDetailPage() {
           </div>
         }
       />
+
+      <Modal open={editLines !== null} title="Edit Order Combinations" size="lg"
+        onClose={() => setEditLines(null)} footer={
+          <Button variant="primary" busy={action.busy} onClick={handleSaveLines}>Save Combinations</Button>
+        }>
+        <Feedback error={action.error} />
+        <p className="mb-4 text-sm">Started preparations cannot be changed. Unchanged combinations retain their ordered prices.</p>
+        {editLines?.map((line, index) => (
+          <div key={`${line.dishId}-${index}`} className="mb-6 space-y-3">
+            <h3 className="font-semibold">{order.lines.find((current) => current.dishId === line.dishId)?.name}</h3>
+            <Input label="Line quantity" type="number" min={1} step={1} value={line.quantity}
+              onChange={(event) => setEditLines((current) => current?.map((item, i) => i === index
+                ? { ...item, quantity: Number(event.target.value) } : item) ?? null)} />
+            <OrderCombinationEditor dishId={line.dishId} quantity={line.quantity} combinations={line.combinations}
+              onChange={(combinations) => setEditLines((current) => current?.map((item, i) =>
+                i === index ? { ...item, combinations } : item) ?? null)} />
+          </div>
+        ))}
+      </Modal>
 
       <Feedback error={action.error} notice={action.notice} />
 

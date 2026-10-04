@@ -25,6 +25,7 @@ import {
 import { OrderRepository } from './order.repository.js';
 import {
   OrderNotEditableError,
+  OrderInvoicedError,
   OrderNotFoundError,
   OrderVersionConflictError,
   PrepUnitLockedError,
@@ -93,6 +94,8 @@ export class OrdersService {
   async update(id: string, dto: UpdateOrderDto, actorUserId: string) {
     const header = await this.repository.findHeader(id);
 
+    if (header.invoiceId) throw new OrderInvoicedError(header.invoiceId);
+
     if (!isEditableStatus(header.status as OrderStatus)) {
       throw new OrderNotEditableError(header.status);
     }
@@ -115,8 +118,7 @@ export class OrdersService {
     }
 
     const { order } = await this.builder.build(dto, { enforceCutoff: true });
-    await this.repository.replaceAllLines(id, order.lines);
-    await this.repository.updateStatus(id, {
+    await this.repository.replaceAllLines(id, order.lines, dto.version ?? header.version, {
       deliveryDate: this.kitchenTime.fromDateString(order.delivery.deliveryDate),
       deliveryTime: this.kitchenTime.fromTimeString(order.delivery.deliveryTime),
      deliveryAddress: {
@@ -167,6 +169,8 @@ packagingTypeName: order.delivery.packagingTypeName,
   async replaceLines(id: string, dto: ReplaceOrderLinesDto) {
     const header = await this.repository.findHeader(id);
 
+    if (header.invoiceId) throw new OrderInvoicedError(header.invoiceId);
+
     if (!allowsLineDiff(header.status as OrderStatus)) {
       throw new OrderNotEditableError(header.status);
     }
@@ -203,12 +207,9 @@ packagingTypeName: order.delivery.packagingTypeName,
       this.kitchenTime.toDateString(header.deliveryDate),
     );
 
-    await this.repository.updateStatus(id, {
-      status: 'PLACED',
+    await this.repository.transition(id, header.version, 'PLACED', {
       placedAt: this.kitchenTime.now(),
-      version: { increment: 1 },
-    });
-    await this.repository.addEvent({
+    }, {
       order: { connect: { id } },
       type: 'PLACED',
       actorType: 'STAFF',
@@ -222,12 +223,9 @@ packagingTypeName: order.delivery.packagingTypeName,
     const header = await this.repository.findHeader(id);
     assertTransition(header.status as OrderStatus, 'CANCELLED');
 
-    await this.repository.updateStatus(id, {
-      status: 'CANCELLED',
+    await this.repository.transition(id, header.version, 'CANCELLED', {
       cancelledAt: this.kitchenTime.now(),
-      version: { increment: 1 },
-    });
-    await this.repository.addEvent({
+    }, {
       order: { connect: { id } },
       type: 'CANCELLED',
       actorType: 'STAFF',
@@ -241,13 +239,10 @@ packagingTypeName: order.delivery.packagingTypeName,
     const header = await this.repository.findHeader(id);
     assertTransition(header.status as OrderStatus, 'REJECTED');
 
-    await this.repository.updateStatus(id, {
-      status: 'REJECTED',
+    await this.repository.transition(id, header.version, 'REJECTED', {
       rejectedAt: this.kitchenTime.now(),
       rejectionReason: dto.reason ?? null,
-      version: { increment: 1 },
-    });
-    await this.repository.addEvent({
+    }, {
       order: { connect: { id } },
       type: 'REJECTED',
       actorType: 'STAFF',
@@ -363,6 +358,7 @@ packagingTypeName: order.delivery.packagingTypeName,
       lines: order.lines.map((line) => ({
         id: line.id,
         dishId: line.dishId,
+        notes: line.notes,
         sku: line.dishSku,
         name: line.dishName,
         description: line.dishDescription,

@@ -85,6 +85,13 @@ export class DispatchService {
 
   async markOrderReady(orderId: string, actorUserId: string) {
   return this.prisma.$transaction(async (tx) => {
+    // Match delivery overrides and departure/delivery: existing Drop -> Order.
+    const membership = await tx.dropOrder.findUnique({
+      where: { orderId }, select: { dropId: true },
+    });
+    if (membership) {
+      await tx.$executeRaw`SELECT id FROM "Drop" WHERE id = ${membership.dropId} FOR UPDATE`;
+    }
     await tx.$executeRaw`
       SELECT id
       FROM "Order"
@@ -99,6 +106,11 @@ export class DispatchService {
 
     if (!order) {
       throw new OrderNotFoundError(orderId);
+    }
+
+    if (order.dropOrder?.dropId !== membership?.dropId) {
+      throw new DropConflictError('DROP_ORDER_MEMBERSHIP_CHANGED',
+        'The order delivery group changed. Reload and retry.', { orderId });
     }
 
     // Kitchen must finish the order before dispatch can process it.

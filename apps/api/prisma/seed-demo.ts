@@ -1,4 +1,5 @@
 import type { SeedClient } from './seed.js';
+import { upsertFinancialDemoInvoice, upsertFinancialDemoOrder } from './seed-financials.js';
 
 const EXTRA_COMPANIES = [
   {
@@ -266,7 +267,7 @@ export async function seedDemoOperations(prisma: SeedClient): Promise<void> {
   const tomorrow = new Date(utcToday);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-  await upsertDemoOrder(prisma, {
+  const historyOrder = await upsertDemoOrder(prisma, {
     key: 'demo:order:history:delivered',
     orderNumber: 'DEMO-HIST-001',
     status: 'DELIVERED',
@@ -329,40 +330,13 @@ export async function seedDemoOperations(prisma: SeedClient): Promise<void> {
     });
   }
 
-  const issued = await prisma.invoice.upsert({
-    where: { invoiceNumber: 'DEMO-INV-ISSUED' },
-    update: {},
-    create: {
-      companyId: company.id,
-      invoiceNumber: 'DEMO-INV-ISSUED',
-      status: 'ISSUED',
-      subtotalCents: 2099,
-      totalCents: 2099,
-    },
+  const voidOrder = await upsertDemoOrder(prisma, {
+    key: 'demo:order:history:void', orderNumber: 'DEMO-HIST-VOID-001',
+    status: 'DELIVERED', deliveryDate: yesterday, company, employeeId: employee.id, wrap, station,
   });
-  await prisma.invoice.upsert({
-    where: { invoiceNumber: 'DEMO-INV-PAID' },
-    update: {},
-    create: {
-      companyId: company.id,
-      invoiceNumber: 'DEMO-INV-PAID',
-      status: 'PAID',
-      subtotalCents: 1799,
-      totalCents: 1799,
-    },
-  });
-  await prisma.invoice.upsert({
-    where: { invoiceNumber: 'DEMO-INV-VOID' },
-    update: {},
-    create: {
-      companyId: company.id,
-      invoiceNumber: 'DEMO-INV-VOID',
-      status: 'VOID',
-      subtotalCents: 1299,
-      totalCents: 1299,
-    },
-  });
-  void issued;
+  if (historyOrder) await upsertFinancialDemoInvoice(prisma, 'DEMO-INV-PAID', historyOrder, 'PAID');
+  if (todayOrder) await upsertFinancialDemoInvoice(prisma, 'DEMO-INV-ISSUED', todayOrder, 'ISSUED', true);
+  if (voidOrder) await upsertFinancialDemoInvoice(prisma, 'DEMO-INV-VOID', voidOrder, 'VOID');
 }
 
 async function upsertDemoOrder(
@@ -394,82 +368,22 @@ async function upsertDemoOrder(
     return null;
   }
 
-  const existing = await prisma.order.findUnique({
-    where: { orderNumber: input.orderNumber },
-    select: { id: true },
-  });
-  const order =
-    existing ??
-    (await prisma.order.create({
-      data: {
-        orderNumber: input.orderNumber,
-        companyId: input.company.id,
-        customerEmployeeId: input.employeeId,
-        status: input.status,
-        deliveryDate: input.deliveryDate,
-        deliveryTime: new Date('1970-01-01T12:30:00.000Z'),
-        deliveryAddressId: address.id,
-        deliveryAddressLabel: address.label,
-        deliveryAddressLine1: address.line1,
-        deliveryAddressCity: address.city,
-        deliveryAddressPostalCode: address.postalCode,
-        deliveryAddressCountry: address.country,
-        priceTierId: input.company.priceTierId,
-        priceTierName: 'Standard',
-        leaveKitchenMinutes: 60,
-        subtotalCents: 2099,
-        totalCents: 2099,
-      },
-      select: { id: true },
-    }));
-
-  const lineCount = await prisma.orderLine.count({ where: { orderId: order.id } });
-  if (lineCount === 0) {
-    const line = await prisma.orderLine.create({
-      data: {
-        orderId: order.id,
-        dishId: input.wrap.id,
-        dishName: input.wrap.name,
-        dishSku: input.wrap.sku,
-        dishTemperature: 'HOT',
-        kitchenStationId: input.station.id,
-        kitchenStationCode: input.station.code,
-        kitchenStationName: input.station.name,
-        quantity: 2,
-        unitPriceCents: 2099,
-        lineTotalCents: 4198,
-      },
-    });
-    const combo = await prisma.orderCombination.create({
-      data: {
-        orderLineId: line.id,
-        quantity: 2,
-        unitPriceCents: 2099,
-        optionsPriceCents: 0,
-        totalCents: 4198,
-        signature: 'no-options',
-      },
-    });
-    await prisma.prepUnit.create({
-      data: {
-        orderId: order.id,
-        orderCombinationId: combo.id,
-        kitchenStationId: input.station.id,
-        kitchenStationCode: input.station.code,
-        kitchenStationName: input.station.name,
-        dishName: input.wrap.name,
-        quantity: 2,
-        status: input.status === 'DELIVERED' ? 'READY' : 'PENDING',
-      },
-    });
-  }
+  const orderId = await upsertFinancialDemoOrder(prisma, {
+    orderNumber: input.orderNumber, companyId: input.company.id,
+    customerEmployeeId: input.employeeId, status: input.status,
+    deliveryDate: input.deliveryDate, deliveryTime: new Date('1970-01-01T12:30:00.000Z'),
+    deliveryAddressId: address.id, deliveryAddressLabel: address.label,
+    deliveryAddressLine1: address.line1, deliveryAddressCity: address.city,
+    deliveryAddressPostalCode: address.postalCode, deliveryAddressCountry: address.country,
+    priceTierId: input.company.priceTierId, priceTierName: 'Standard', leaveKitchenMinutes: 60,
+  }, input.wrap.id);
 
   await prisma.demoOwnedRecord.upsert({
     where: { key: input.key },
-    update: { entityId: order.id },
-    create: { key: input.key, entityType: 'Order', entityId: order.id },
+    update: { entityId: orderId },
+    create: { key: input.key, entityType: 'Order', entityId: orderId },
   });
-  return order.id;
+  return orderId;
 }
 // ============================================================
 // RICH DEMO DATA
@@ -1065,7 +979,8 @@ for (let i = 0; i < options.length; i++) {
 
     const category = await prisma.menuCategory.upsert({
       where: {
-        slug: `rich-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        // Names are unique too; reuse the basic seed's "Salads" category.
+        name,
       },
 
       update: {
@@ -1388,158 +1303,14 @@ async function createRichOrder(
     };
   },
 ): Promise<string | null> {
-  const existing = await prisma.order.findUnique({
-    where: {
-      orderNumber: input.orderNumber,
-    },
-
-    select: {
-      id: true,
-    },
-  });
-
-  if (existing) {
-    return existing.id;
-  }
-
-  const tierPrice = await prisma.dishTierPrice.findUnique({
-    where: {
-      dishId_priceTierId: {
-        dishId: input.dish.id,
-        priceTierId: input.company.priceTierId,
-      },
-    },
-
-    select: {
-      priceCents: true,
-    },
-  });
-
-  const unitPrice = tierPrice?.priceCents ?? input.dish.costCents + 700;
-
-  const quantity = 2;
-  const total = unitPrice * quantity;
-
-  const order = await prisma.order.create({
-    data: {
-      orderNumber: input.orderNumber,
-
-      companyId: input.company.id,
-
-      customerEmployeeId: input.employee.id,
-
-      status: input.status as never,
-
-      deliveryDate: input.deliveryDate,
-
-      deliveryTime: new Date('1970-01-01T12:30:00.000Z'),
-
-      deliveryAddressId: input.company.addressId,
-
-      deliveryAddressLabel: 'HQ',
-
-      deliveryAddressLine1: 'Corporate Headquarters',
-
-      deliveryAddressCity: 'Bengaluru',
-
-      deliveryAddressPostalCode: '560001',
-
-      deliveryAddressCountry: 'IN',
-
-      priceTierId: input.company.priceTierId,
-
-      priceTierName: input.company.priceTierName,
-
-      leaveKitchenMinutes: 60,
-
-      subtotalCents: total,
-
-      totalCents: total,
-    },
-
-    select: {
-      id: true,
-    },
-  });
-
-  // Cancelled/rejected orders don't need kitchen work.
-  if (input.status === 'CANCELLED' || input.status === 'REJECTED') {
-    return order.id;
-  }
-
-  const line = await prisma.orderLine.create({
-    data: {
-      orderId: order.id,
-
-      dishId: input.dish.id,
-
-      dishName: input.dish.name,
-
-      dishSku: input.dish.sku,
-
-      dishTemperature:
-        input.dish.stationCode === 'COLD_LINE' ? 'COLD' : 'HOT',
-
-      kitchenStationId: input.dish.stationId,
-
-      kitchenStationCode: input.dish.stationCode,
-
-      kitchenStationName: input.dish.stationName,
-
-      quantity,
-
-      unitPriceCents: unitPrice,
-
-      lineTotalCents: total,
-    },
-
-    select: {
-      id: true,
-    },
-  });
-
-  const combo = await prisma.orderCombination.create({
-    data: {
-      orderLineId: line.id,
-
-      quantity,
-
-      unitPriceCents: unitPrice,
-
-      optionsPriceCents: 0,
-
-      totalCents: total,
-
-      signature: 'no-options',
-    },
-
-    select: {
-      id: true,
-    },
-  });
-
-  const prepStatus =
-    input.status === 'DELIVERED' ? 'READY' : 'PENDING';
-
-  await prisma.prepUnit.create({
-    data: {
-      orderId: order.id,
-
-      orderCombinationId: combo.id,
-
-      kitchenStationId: input.dish.stationId,
-
-      kitchenStationCode: input.dish.stationCode,
-
-      kitchenStationName: input.dish.stationName,
-
-      dishName: input.dish.name,
-
-      quantity,
-
-      status: prepStatus as never,
-    },
-  });
-
-  return order.id;
+  return upsertFinancialDemoOrder(prisma, {
+    orderNumber: input.orderNumber, companyId: input.company.id,
+    customerEmployeeId: input.employee.id, status: input.status as never,
+    deliveryDate: input.deliveryDate, deliveryTime: new Date('1970-01-01T12:30:00.000Z'),
+    deliveryAddressId: input.company.addressId, deliveryAddressLabel: 'HQ',
+    deliveryAddressLine1: 'Corporate Headquarters', deliveryAddressCity: 'Bengaluru',
+    deliveryAddressPostalCode: '560001', deliveryAddressCountry: 'IN',
+    priceTierId: input.company.priceTierId, priceTierName: input.company.priceTierName,
+    leaveKitchenMinutes: 60,
+  }, input.dish.id);
 }

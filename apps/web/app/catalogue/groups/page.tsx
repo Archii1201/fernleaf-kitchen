@@ -28,7 +28,7 @@ const PAGE_SIZE = 12;
 
 export default function OptionGroupsPage() {
   const { can } = useAuth();
-  const canEdit = can('catalogue.edit') || can('catalogue.admin');
+  const canEdit = can('catalogue.manage');
 
   // Filters & Pagination
   const [page, setPage] = useState(1);

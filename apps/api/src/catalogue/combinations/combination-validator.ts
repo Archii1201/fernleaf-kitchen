@@ -120,6 +120,7 @@ export class CombinationValidator {
   ): string[] {
     const selectedIds: string[] = [];
     const satisfiedGroups = new Set<string>();
+    const selectionsByGroup = new Map<string, Set<string>>();
 
     for (const selection of combination.selections) {
       const group = groups.get(selection.optionGroupId);
@@ -128,7 +129,8 @@ export class CombinationValidator {
         throw new OptionGroupNotOnDishError(selection.optionGroupId, dishName);
       }
 
-      const seenInGroup = new Set<string>();
+      const seenInGroup = selectionsByGroup.get(group.id) ?? new Set<string>();
+      selectionsByGroup.set(group.id, seenInGroup);
 
       for (const optionId of selection.optionIds) {
         if (seenInGroup.has(optionId)) {
@@ -152,12 +154,12 @@ export class CombinationValidator {
 
       if (
         group.maxSelections !== null &&
-        selection.optionIds.length > group.maxSelections
+        seenInGroup.size > group.maxSelections
       ) {
         throw new MaxSelectionsExceededError(
           group.name,
           group.maxSelections,
-          selection.optionIds.length,
+          seenInGroup.size,
         );
       }
 

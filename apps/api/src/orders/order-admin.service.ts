@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { DropConflictError } from '../dispatch/dispatch.errors.js';
 import {
   CompanyAddressNotFoundError,
   CompanyAddressNotOwnedError,
@@ -55,7 +56,7 @@ export class OrderAdminService {
         kitchenReadyAt: planned.kitchenReadyAt,
         dispatchReadyAt: planned.dispatchReadyAt,
       };
-    });
+    }, true);
   }
 
   overrideAddress(id: string, dto: AdminAddressDto) {
@@ -86,7 +87,7 @@ export class OrderAdminService {
         deliveryAddressPostalCode: address.postalCode,
         deliveryAddressCountry: address.country,
       };
-    });
+    }, true);
   }
 
   overridePackaging(id: string, dto: AdminPackagingDto) {
@@ -119,24 +120,81 @@ export class OrderAdminService {
       order: Awaited<ReturnType<OrderRepository['findHeader']>>,
       tx: Prisma.TransactionClient,
     ) => Promise<Prisma.OrderUpdateInput> | Prisma.OrderUpdateInput,
+    synchronizeDrop = false,
   ) {
     await this.prisma.$transaction(async (tx) => {
+      // Dispatch departure/delivery lock Drop -> Order. Take the same order
+      // when this override must also write an existing Drop.
+      const membership = synchronizeDrop
+        ? await tx.dropOrder.findUnique({ where: { orderId: id }, select: { dropId: true } })
+        : null;
+      if (membership) {
+        await tx.$queryRaw`SELECT id FROM "Drop" WHERE id = ${membership.dropId} FOR UPDATE`;
+      }
       const order = await this.repository.lockAndRead(tx, id, version);
 
       if (!OVERRIDABLE.has(order.status as OrderStatus)) {
         throw new OrderNotOverridableError(order.status);
       }
 
+      if (synchronizeDrop) {
+        const currentMembership = await tx.dropOrder.findUnique({
+          where: { orderId: id }, select: { dropId: true },
+        });
+        if (currentMembership?.dropId !== membership?.dropId) {
+          throw new DropConflictError('DROP_ORDER_MEMBERSHIP_CHANGED',
+            'The order delivery group changed. Reload and retry the override.', { orderId: id });
+        }
+      }
+
       const data = await patch(order, tx);
-      await tx.order.update({
+      const updated = await tx.order.update({
         where: { id },
         data: {
           ...data,
           version: { increment: 1 },
         },
       });
+      if (membership) await this.synchronizeDrop(tx, membership.dropId, updated);
+    }).catch((error: unknown) => {
+      if (synchronizeDrop && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new DropConflictError('DROP_DELIVERY_OVERRIDE_COLLISION',
+          'Another drop already uses this delivery destination. Grouping requires review.');
+      }
+      throw error;
     });
 
     return this.orders.getById(id);
+  }
+
+  private async synchronizeDrop(
+    tx: Prisma.TransactionClient,
+    dropId: string,
+    order: Awaited<ReturnType<OrderRepository['findHeader']>>,
+  ) {
+    const drop = await tx.drop.findUniqueOrThrow({ where: { id: dropId } });
+    if (drop.companyId === order.companyId && drop.companyAddressId === order.deliveryAddressId &&
+      drop.deliveryDate.getTime() === order.deliveryDate.getTime() &&
+      drop.deliveryTime.getTime() === order.deliveryTime.getTime()) return;
+
+    if (await tx.dropOrder.count({ where: { dropId } }) !== 1) {
+      throw new DropConflictError('DROP_DELIVERY_OVERRIDE_SHARED',
+        'This drop contains multiple orders. Changing its delivery destination requires review.', { dropId });
+    }
+    const destination = {
+      companyId: order.companyId,
+      companyAddressId: order.deliveryAddressId,
+      deliveryDate: order.deliveryDate,
+      deliveryTime: order.deliveryTime,
+    };
+    const collision = await tx.drop.findUnique({ where: {
+      companyId_companyAddressId_deliveryDate_deliveryTime: destination,
+    }, select: { id: true } });
+    if (collision && collision.id !== dropId) {
+      throw new DropConflictError('DROP_DELIVERY_OVERRIDE_COLLISION',
+        'Another drop already uses this delivery destination. Grouping requires review.', { dropId, destinationDropId: collision.id });
+    }
+    // Keep the existing Drop, assignment, workflow status and actuals.
+    await tx.drop.update({ where: { id: dropId }, data: destination });
   }
 }

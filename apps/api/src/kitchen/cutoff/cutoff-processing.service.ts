@@ -75,8 +75,17 @@ export class CutoffProcessingService {
         };
       }
 
+      // Serialize confirmation/cancellation with edits and manual transitions.
+      // Read the candidates only after acquiring their existing order row locks.
+      const lockedOrders = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Order"
+        WHERE "deliveryDate" = ${target} AND status IN ('DRAFT', 'PLACED')
+        ORDER BY id
+        FOR UPDATE
+      `;
       const orders = await tx.order.findMany({
         where: {
+          id: { in: lockedOrders.map((order) => order.id) },
           deliveryDate: target,
           status: { in: ['DRAFT', 'PLACED'] },
         },

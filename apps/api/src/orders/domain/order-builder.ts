@@ -178,6 +178,7 @@ export class OrderBuilder {
                 maxSelections: true,
                 active: true,
                 options: {
+                  where: { active: true },
                   select: {
                     option: {
                       select: {

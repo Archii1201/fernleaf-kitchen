@@ -6,7 +6,8 @@ node_modules/
 .env
 .env.local
 .env.*.local
-
+# Documentation / assignment files
+docs/
 # Build
 dist/
 .next/

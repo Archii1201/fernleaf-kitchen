@@ -33,7 +33,7 @@ type ViewMode = 'admin' | 'preview';
 
 export default function MenuPage() {
   const { can } = useAuth();
-  const canEdit = can('menu.edit');
+  const canEdit = can('menu.manage');
   const action = useAction();
 
   const [mode, setMode] = useState<ViewMode>('admin');

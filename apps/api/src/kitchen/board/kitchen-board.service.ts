@@ -142,6 +142,16 @@ export class KitchenBoardService {
 
   private async mutateUnit(id: string, action: 'start' | 'done') {
     return this.prisma.$transaction(async (tx) => {
+      // Locate the aggregate without locking a child first. All kitchen
+      // writers take Order -> PrepUnit, matching force-complete and line edits.
+      const reference = await tx.prepUnit.findUnique({
+        where: { id },
+        select: { orderId: true },
+      });
+      if (!reference) {
+        throw new PrepUnitNotFoundError(id);
+      }
+      await tx.$executeRaw`SELECT id FROM "Order" WHERE id = ${reference.orderId} FOR UPDATE`;
       await tx.$executeRaw`SELECT id FROM "PrepUnit" WHERE id = ${id} FOR UPDATE`;
       const unit = await tx.prepUnit.findUnique({
         where: { id },

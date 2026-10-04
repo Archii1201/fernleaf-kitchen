@@ -6,6 +6,7 @@ describe('KitchenBoardService', () => {
   it('starts a pending unit once and rejects a second start', async () => {
     const unit = {
       id: 'u1',
+      orderId: 'o1',
       status: 'PENDING',
       startedAt: null,
       completedAt: null,
@@ -33,6 +34,15 @@ describe('KitchenBoardService', () => {
     );
 
     await service.start('u1');
+    expect(tx.prepUnit.findUnique).toHaveBeenNthCalledWith(1, {
+      where: { id: 'u1' }, select: { orderId: true },
+    });
+    expect(tx.$executeRaw.mock.calls[0]).toEqual([
+      expect.arrayContaining([expect.stringContaining('FROM "Order"')]), 'o1',
+    ]);
+    expect(tx.$executeRaw.mock.calls[1]).toEqual([
+      expect.arrayContaining([expect.stringContaining('FROM "PrepUnit"')]), 'u1',
+    ]);
     await expect(service.start('u1')).rejects.toBeInstanceOf(PrepUnitConflictError);
     expect(tx.order.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -44,6 +54,7 @@ describe('KitchenBoardService', () => {
   it('records startedAt when completing a pending unit and becomes ready only when all are done', async () => {
     const unit = {
       id: 'u1',
+      orderId: 'o1',
       status: 'PENDING',
       startedAt: null,
       completedAt: null,
@@ -90,6 +101,7 @@ describe('KitchenBoardService', () => {
   it('does not mark the order ready while another unit is unfinished', async () => {
     const unit = {
       id: 'u1',
+      orderId: 'o1',
       status: 'IN_PROGRESS',
       startedAt: new Date(),
       completedAt: null,

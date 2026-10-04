@@ -233,4 +233,46 @@ describe('Authentication and RBAC (e2e)', () => {
       expect(cookie.toLowerCase()).toContain('httponly');
     });
   });
+
+  describe('P0-6 management permission isolation', () => {
+    it.each(['kitchen@test.com', 'dispatch@test.com', 'driver@test.com'])(
+      '%s cannot invoke catalogue, menu, billing or dispatch management without its permission',
+      async (email) => {
+        const cookie = await login(email);
+        for (const path of ['/api/dishes', '/api/menu/categories', '/api/invoices']) {
+          const response = await request(app.getHttpServer())
+            .post(path).set('Cookie', cookie).send({}).expect(403);
+          expect(response.body.code).toBe('INSUFFICIENT_PERMISSIONS');
+        }
+        if (email !== 'dispatch@test.com') {
+          await request(app.getHttpServer())
+            .post('/api/dispatch/drops/00000000-0000-4000-8000-000000000000/assign-driver')
+            .set('Cookie', cookie).send({}).expect(403);
+        }
+      },
+    );
+
+    it('Admin holds all three management capabilities and can load eligible drivers', async () => {
+      const cookie = await login('admin@test.com');
+      const profile = await request(app.getHttpServer())
+        .get('/api/auth/me').set('Cookie', cookie).expect(200);
+      expect(profile.body.permissions).toEqual(expect.arrayContaining([
+        'catalogue.manage', 'menu.manage', 'billing.manage',
+      ]));
+      const drivers = await request(app.getHttpServer())
+        .get('/api/companies/eligible-drivers').set('Cookie', cookie).expect(200);
+      expect(drivers.body.length).toBeGreaterThan(0);
+    });
+
+    it('documents the pending Dispatch driver-list mismatch without granting companies.view', async () => {
+      const cookie = await login('dispatch@test.com');
+      const profile = await request(app.getHttpServer())
+        .get('/api/auth/me').set('Cookie', cookie).expect(200);
+      expect(profile.body.permissions).toContain('dispatch.manage');
+      expect(profile.body.permissions).not.toContain('companies.view');
+      const denied = await request(app.getHttpServer())
+        .get('/api/companies/eligible-drivers').set('Cookie', cookie).expect(403);
+      expect(denied.body.details.requiredPermissions).toEqual(['companies.view']);
+    });
+  });
 });

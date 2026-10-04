@@ -50,6 +50,7 @@ export interface OrderCombination {
 export interface OrderLine {
   id: string;
   dishId: string;
+  notes: string | null;
   sku: string;
   name: string;
   description: string | null;
@@ -159,6 +160,8 @@ export const listOrders = (q: Query) => get<Paginated<OrderListItem>>('/orders',
 export const getOrder = (id: string) => get<OrderDetail>(`/orders/${id}`);
 export const quoteOrder = (body: CreateOrderInput) => send<OrderQuote>('POST', '/orders/quote', body);
 export const createOrder = (body: CreateOrderInput) => send<OrderDetail>('POST', '/orders', body);
+export const replaceOrderLines = (id: string, version: number, lines: OrderLineInput[]) =>
+  send<OrderDetail>('PUT', `/orders/${id}/lines`, { version, lines });
 export const placeOrder = (id: string) => send('POST', `/orders/${id}/place`);
 export const cancelOrder = (id: string) => send('POST', `/orders/${id}/cancel`);
 export const rejectOrder = (id: string, reason?: string) => send('POST', `/orders/${id}/reject`, { reason });

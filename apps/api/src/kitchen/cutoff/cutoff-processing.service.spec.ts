@@ -8,6 +8,7 @@ describe('CutoffProcessingService', () => {
   function setup(hasPassed: boolean, existingRun: unknown = null) {
     const tx = {
       $executeRaw: vi.fn(),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: 'draft-1' }, { id: 'placed-1' }]),
       cutoffRun: {
         findFirst: vi.fn().mockResolvedValue(existingRun),
         upsert: vi.fn().mockResolvedValue({
@@ -95,6 +96,8 @@ describe('CutoffProcessingService', () => {
     expect(first.cancelled).toBe(1);
     expect(first.confirmed).toBe(1);
     expect(tx.$executeRaw).toHaveBeenCalled();
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.order.findMany.mock.invocationCallOrder[0]!);
     expect(tx.drop.upsert).toHaveBeenCalledTimes(1);
     expect(tx.orderEvent.create).toHaveBeenCalledTimes(2);
 

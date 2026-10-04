@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { CombinationValidator } from './combination-validator.js';
 import {
   CombinationQuantityMismatchError,
+  CombinationQuantityInvalidError,
+  DuplicateOptionSelectionError,
   DishUnavailableError,
   DuplicateCombinationError,
   MaxSelectionsExceededError,
@@ -69,6 +71,61 @@ describe('CombinationValidator', () => {
     expect(result[0].quantity).toBe(3);
     expect(result[0].optionIds).toEqual([MILD.id]);
     expect(result[0].signature).toBe(MILD.id);
+  });
+
+  it('accepts a 2 + 3 split for a quantity of 5 with independent selections', () => {
+    const result = validator.validate({ dish: dish(), lineQuantity: 5, combinations: [
+      { quantity: 2, selections: [{ optionGroupId: 'grp-spice', optionIds: [MILD.id] }] },
+      { quantity: 3, selections: [{ optionGroupId: 'grp-spice', optionIds: [HOT.id] }] },
+    ] });
+    expect(result.map((entry) => entry.quantity)).toEqual([2, 3]);
+    expect(result.map((entry) => entry.optionIds)).toEqual([[MILD.id], [HOT.id]]);
+  });
+
+  it.each([2, 4])('rejects a 2 + %s split for a quantity of 5', (quantity) => {
+    expect(() => validator.validate({ dish: dish(), lineQuantity: 5, combinations: [
+      { quantity: 2, selections: [{ optionGroupId: 'grp-spice', optionIds: [MILD.id] }] },
+      { quantity, selections: [{ optionGroupId: 'grp-spice', optionIds: [HOT.id] }] },
+    ] })).toThrow(CombinationQuantityMismatchError);
+  });
+
+  it.each([0, -1, 1.5])('rejects invalid combination quantity %s', (quantity) => {
+    expect(() => validator.validate({ dish: dish(), lineQuantity: 1, combinations: [
+      { quantity, selections: [{ optionGroupId: 'grp-spice', optionIds: [MILD.id] }] },
+    ] })).toThrow(CombinationQuantityInvalidError);
+  });
+
+  it('rejects a duplicate option repeated in separate entries for the same group', () => {
+    expect(() => validator.validate({ dish: dish(), lineQuantity: 1, combinations: [
+      { quantity: 1, selections: [
+        { optionGroupId: 'grp-spice', optionIds: [MILD.id] },
+        { optionGroupId: 'grp-spice', optionIds: [MILD.id] },
+      ] },
+    ] })).toThrow(DuplicateOptionSelectionError);
+  });
+
+  it('counts all entries for a group against its maximum', () => {
+    expect(() => validator.validate({ dish: dish(), lineQuantity: 1, combinations: [
+      { quantity: 1, selections: [
+        { optionGroupId: 'grp-spice', optionIds: [MILD.id] },
+        { optionGroupId: 'grp-spice', optionIds: [HOT.id] },
+      ] },
+    ] })).toThrow(MaxSelectionsExceededError);
+  });
+
+  it('rejects a duplicate option within one group entry', () => {
+    expect(() => validator.validate({ dish: dish(), lineQuantity: 1, combinations: [
+      { quantity: 1, selections: [{ optionGroupId: 'grp-spice', optionIds: [MILD.id, MILD.id] }] },
+    ] })).toThrow(DuplicateOptionSelectionError);
+  });
+
+  it('requires at least one selection for a required group while optional groups may be omitted', () => {
+    expect(() => validator.validate({ dish: dish(), lineQuantity: 1, combinations: [
+      { quantity: 1, selections: [{ optionGroupId: 'grp-spice', optionIds: [] }] },
+    ] })).toThrow(RequiredOptionGroupMissingError);
+    expect(validator.validate({ dish: dish(), lineQuantity: 1, combinations: [
+      { quantity: 1, selections: [{ optionGroupId: 'grp-spice', optionIds: [MILD.id] }] },
+    ] })[0].optionIds).toEqual([MILD.id]);
   });
 
   it('accepts several combinations whose quantities sum exactly', () => {

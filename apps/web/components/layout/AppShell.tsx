@@ -26,7 +26,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [loading, profile, router]);
 
   const section = matchNav(pathname);
-  const allowed = !section || canAny(section.any);
+  const allowed =
+    pathname === '/orders/new'
+      ? canAny(['orders.edit'])
+      : !section || canAny(section.any);
 
   return (
     <div className="paper min-h-screen">

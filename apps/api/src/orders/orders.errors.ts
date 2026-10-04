@@ -97,6 +97,16 @@ export class OrderNotEditableError extends ConflictDomainError {
   }
 }
 
+export class OrderInvoicedError extends ConflictDomainError {
+  constructor(invoiceId: string) {
+    super({
+      code: 'ORDER_INVOICED',
+      message: 'An invoiced order cannot receive monetary line edits.',
+      details: { invoiceId },
+    });
+  }
+}
+
 export class InactiveEmployeeError extends ValidationDomainError {
   constructor(employeeId: string) {
     super({

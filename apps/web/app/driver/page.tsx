@@ -17,7 +17,8 @@ import { formatDate, greeting, todayIso } from '../../lib/format';
 import { useAction, useLoad } from '../../lib/use-load';
 
 export default function DriverPage() {
-  const { profile } = useAuth();
+  const { profile, can } = useAuth();
+  const canDeliver = can('driver.update');
   const [deliveringDrop, setDeliveringDrop] = useState<DriverDrop | null>(null);
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
@@ -215,15 +216,17 @@ export default function DriverPage() {
                     </a>
                   ) : null}
 
-                  <Button
-                    size="lg"
-                    variant="primary"
-                    className="w-full text-base font-bold shadow-md"
-                    onClick={() => handleOpenDeliveryModal(nextDrop)}
-                  >
-                    <Icon name="check" className="h-5 w-5 mr-1" />
-                    Complete Delivery
-                  </Button>
+                  {canDeliver ? (
+                    <Button
+                      size="lg"
+                      variant="primary"
+                      className="w-full text-base font-bold shadow-md"
+                      onClick={() => handleOpenDeliveryModal(nextDrop)}
+                    >
+                      <Icon name="check" className="h-5 w-5 mr-1" />
+                      Complete Delivery
+                    </Button>
+                  ) : null}
                 </div>
               </Card>
             </section>

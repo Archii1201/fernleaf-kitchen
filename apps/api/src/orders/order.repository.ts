@@ -3,14 +3,20 @@ import type { Prisma } from '@prisma/client';
 import { plannedKitchenTimes } from '../kitchen/board/kitchen-timing.js';
 import { KitchenTime } from '../kitchen/time/kitchen-time.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { combinationKey } from './domain/line-diff.js';
-import type { OrderStatus } from './domain/order-state.js';
+import { combinationKey, diffCombinations } from './domain/line-diff.js';
+import { allowsLineDiff, assertTransition, isEditableStatus, type OrderStatus } from './domain/order-state.js';
 import type {
   BuiltLine,
   BuiltOrder,
   ExistingCombinationView,
 } from './domain/order-types.js';
-import { OrderNotFoundError, OrderVersionConflictError } from './orders.errors.js';
+import {
+  OrderInvoicedError,
+  OrderNotFoundError,
+  OrderVersionConflictError,
+  OrderNotEditableError,
+  PrepUnitLockedError,
+} from './orders.errors.js';
 
 export const ORDER_DETAIL_INCLUDE = {
   company: { select: { id: true, name: true } },
@@ -106,14 +112,34 @@ export class OrderRepository {
     });
   }
 
-  async replaceAllLines(orderId: string, lines: BuiltLine[]): Promise<void> {
+  async replaceAllLines(
+    orderId: string,
+    lines: BuiltLine[],
+    expectedVersion?: number,
+    headerData: Prisma.OrderUpdateInput = {},
+  ): Promise<void> {
+    const version = expectedVersion ?? (await this.findHeader(orderId)).version;
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+      const current = await tx.order.findUnique({ where: { id: orderId } });
+      if (!current) throw new OrderNotFoundError(orderId);
+      if (current.invoiceId) throw new OrderInvoicedError(current.invoiceId);
+      if (current.version !== version) {
+        throw new OrderVersionConflictError(version, current.version);
+      }
+      if (!isEditableStatus(current.status as OrderStatus)) {
+        throw new OrderNotEditableError(current.status);
+      }
+      if (await tx.prepUnit.count({ where: { orderId, status: { not: 'PENDING' } } })) {
+        throw new PrepUnitLockedError('order', 'IN_PROGRESS');
+      }
       await tx.orderLine.deleteMany({ where: { orderId } });
       await this.writeLines(tx, orderId, lines);
       const totals = sumLines(lines);
       await tx.order.update({
         where: { id: orderId },
         data: {
+          ...headerData,
           ...totals,
           version: { increment: 1 },
         },
@@ -193,7 +219,7 @@ export class OrderRepository {
     existing: ExistingCombinationView[];
     diffs: import('./domain/order-types.js').LineDiffEntry[];
   }): Promise<void> {
-    const { orderId, incoming, diffs } = input;
+    const { orderId, incoming } = input;
     const linesByDish = new Map(incoming.lines.map((line) => [line.dishId, line]));
 
     await this.prisma.$transaction(async (tx) => {
@@ -205,16 +231,25 @@ export class OrderRepository {
 `;
       const current = await tx.order.findUnique({
         where: { id: orderId },
-        select: { version: true },
+        include: ORDER_DETAIL_INCLUDE,
       });
 
       if (!current) {
         throw new OrderNotFoundError(orderId);
       }
 
+      if (current.invoiceId) throw new OrderInvoicedError(current.invoiceId);
+
       if (current.version !== input.expectedVersion) {
         throw new OrderVersionConflictError(input.expectedVersion, current.version);
       }
+
+      if (!allowsLineDiff(current.status as OrderStatus)) {
+        throw new OrderNotEditableError(current.status);
+      }
+      // The preflight diff may predate a state/preparation change. Validate
+      // against the rows read while holding the order lock before writing.
+      const diffs = diffCombinations(incoming.lines, this.existingCombinations(current));
 
       const lineIdsByDish = new Map<string, string>();
       const existingLines = await tx.orderLine.findMany({
@@ -289,6 +324,10 @@ export class OrderRepository {
               unitPriceCents: diff.incoming.unitPriceCents,
               optionsPriceCents: diff.incoming.optionsPriceCents,
               totalCents: diff.incoming.totalCents,
+              options: {
+                deleteMany: {},
+                create: diff.incoming.options.map((option) => ({ ...option })),
+              },
             },
           });
           await tx.prepUnit.update({
@@ -307,7 +346,7 @@ export class OrderRepository {
         }
       }
 
-      await this.recalculate(tx, orderId, incoming);
+      await this.recalculate(tx, orderId);
       await tx.order.update({
         where: { id: orderId },
         data: { version: { increment: 1 } },
@@ -345,12 +384,30 @@ export class OrderRepository {
     return this.prisma.order.update({ where: { id }, data });
   }
 
+  async transition(
+    id: string,
+    expectedVersion: number,
+    status: OrderStatus,
+    data: Prisma.OrderUpdateInput,
+    event: Prisma.OrderEventCreateInput,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const order = await this.lockAndRead(tx, id, expectedVersion);
+      assertTransition(order.status as OrderStatus, status);
+      await tx.order.update({
+        where: { id },
+        data: { ...data, status, version: { increment: 1 } },
+      });
+      await tx.orderEvent.create({ data: event });
+    });
+  }
+
   async lockAndRead(
     tx: Prisma.TransactionClient,
     id: string,
     expectedVersion: number,
   ) {
-    await tx.$executeRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
     const order = await tx.order.findUnique({ where: { id } });
 
     if (!order) {
@@ -449,15 +506,32 @@ async listWhere<T extends Prisma.OrderFindManyArgs>(
   private async recalculate(
     tx: Prisma.TransactionClient,
     orderId: string,
-    incoming: BuiltOrder,
   ): Promise<void> {
-    for (const line of incoming.lines) {
-      await tx.orderLine.updateMany({
-        where: { orderId, dishId: line.dishId },
+    const lines = await tx.orderLine.findMany({
+      where: { orderId },
+      include: { combinations: true },
+    });
+    let subtotalCents = 0;
+    for (const line of lines) {
+      if (line.combinations.length === 0) {
+        await tx.orderLine.delete({ where: { id: line.id } });
+        continue;
+      }
+      const quantity = line.combinations.reduce(
+        (sum, combo) => sum + combo.quantity,
+        0,
+      );
+      const lineTotalCents = line.combinations.reduce(
+        (sum, combo) => sum + combo.totalCents,
+        0,
+      );
+      subtotalCents += lineTotalCents;
+      await tx.orderLine.update({
+        where: { id: line.id },
         data: {
-          quantity: line.quantity,
-          unitPriceCents: line.unitPriceCents,
-          lineTotalCents: line.lineTotalCents,
+          quantity,
+          unitPriceCents: quantity === 0 ? 0 : Math.trunc(lineTotalCents / quantity),
+          lineTotalCents,
         },
       });
     }
@@ -465,8 +539,8 @@ async listWhere<T extends Prisma.OrderFindManyArgs>(
     await tx.order.update({
       where: { id: orderId },
       data: {
-        subtotalCents: incoming.subtotalCents,
-        totalCents: incoming.totalCents,
+        subtotalCents,
+        totalCents: subtotalCents,
       },
     });
   }

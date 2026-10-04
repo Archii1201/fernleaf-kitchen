@@ -7,6 +7,7 @@ describe('OrderAdminService', () => {
   function setup(order: Record<string, unknown>) {
     const tx = {
       $executeRaw: vi.fn(),
+      dropOrder: { findUnique: vi.fn().mockResolvedValue(null) },
       order: {
         findUnique: vi.fn().mockResolvedValue(order),
         update: vi.fn(),
