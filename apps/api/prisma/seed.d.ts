@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { type RoleName } from '../src/auth/permissions.js';
+import type { SeedOptions } from './seed-runtime.js';
 export declare const STAFF_ACCOUNTS: ReadonlyArray<{
     email: string;
     role: RoleName;
@@ -20,8 +21,8 @@ export declare function seedPricing(prisma: SeedClient): Promise<void>;
 export declare function seedCompanies(prisma: SeedClient): Promise<void>;
 export declare function seedMenu(prisma: SeedClient): Promise<void>;
 export declare function databaseIsEmpty(prisma: SeedClient): Promise<boolean>;
-export declare function seedAll(prisma: SeedClient): Promise<void>;
-export declare function seedIfNeeded(prisma: SeedClient, options?: {
+export declare function seedAll(prisma: SeedClient, options?: SeedOptions): Promise<void>;
+export declare function seedIfNeeded(prisma: SeedClient, options?: SeedOptions & {
     force?: boolean;
 }): Promise<{
     seeded: boolean;

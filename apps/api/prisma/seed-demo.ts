@@ -1,5 +1,7 @@
 import type { SeedClient } from './seed.js';
 import { upsertFinancialDemoInvoice, upsertFinancialDemoOrder } from './seed-financials.js';
+import { createSeedScenario, seedTime, relativeSeedDate, type SeedOptions } from './seed-runtime.js';
+import { WEEKDAYS } from '../src/kitchen/time/weekday.js';
 
 const EXTRA_COMPANIES = [
   {
@@ -194,7 +196,7 @@ export async function seedExtendedCompanies(prisma: SeedClient): Promise<void> {
             active: true,
             domains: { create: { domain: company.domain } },
             workingDays: {
-              create: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'].map((weekday) => ({
+              create: WEEKDAYS.map((weekday) => ({
                 weekday: weekday as never,
               })),
             },
@@ -238,7 +240,7 @@ export async function seedExtendedCompanies(prisma: SeedClient): Promise<void> {
   }
 }
 
-export async function seedDemoOperations(prisma: SeedClient): Promise<void> {
+export async function seedDemoOperations(prisma: SeedClient, options: SeedOptions = {}): Promise<void> {
   const northwind = await prisma.companyDomain.findUnique({
     where: { domain: 'northwind.com' },
     select: { companyId: true },
@@ -260,12 +262,10 @@ export async function seedDemoOperations(prisma: SeedClient): Promise<void> {
     return;
   }
 
-  const today = new Date();
-  const utcToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const yesterday = new Date(utcToday);
-  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-  const tomorrow = new Date(utcToday);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const time = seedTime(options);
+  const utcToday = relativeSeedDate(time, 0);
+  const yesterday = relativeSeedDate(time, -1);
+  const tomorrow = relativeSeedDate(time, 1);
 
   const historyOrder = await upsertDemoOrder(prisma, {
     key: 'demo:order:history:delivered',
@@ -276,7 +276,7 @@ export async function seedDemoOperations(prisma: SeedClient): Promise<void> {
     employeeId: employee.id,
     wrap,
     station,
-  });
+  }, options);
   const todayOrder = await upsertDemoOrder(prisma, {
     key: 'demo:order:today:confirmed',
     orderNumber: 'DEMO-TODAY-001',
@@ -286,7 +286,7 @@ export async function seedDemoOperations(prisma: SeedClient): Promise<void> {
     employeeId: employee.id,
     wrap,
     station,
-  });
+  }, options);
   await upsertDemoOrder(prisma, {
     key: 'demo:order:tomorrow:placed',
     orderNumber: 'DEMO-FUT-001',
@@ -296,44 +296,12 @@ export async function seedDemoOperations(prisma: SeedClient): Promise<void> {
     employeeId: employee.id,
     wrap,
     station,
-  });
-
-  if (todayOrder) {
-    const drop = await prisma.drop.upsert({
-      where: {
-        companyId_companyAddressId_deliveryDate_deliveryTime: {
-          companyId: company.id,
-          companyAddressId: company.defaultAddress.id,
-          deliveryDate: utcToday,
-          deliveryTime: new Date('1970-01-01T12:30:00.000Z'),
-        },
-      },
-      create: {
-        companyId: company.id,
-        companyAddressId: company.defaultAddress.id,
-        deliveryDate: utcToday,
-        deliveryTime: new Date('1970-01-01T12:30:00.000Z'),
-        status: 'PENDING',
-        driverStaffId: driver.id,
-      },
-      update: { driverStaffId: driver.id },
-    });
-    await prisma.dropOrder.upsert({
-      where: { orderId: todayOrder },
-      create: { dropId: drop.id, orderId: todayOrder },
-      update: { dropId: drop.id },
-    });
-    await prisma.demoOwnedRecord.upsert({
-      where: { key: 'demo:drop:today:driver' },
-      update: { entityId: drop.id },
-      create: { key: 'demo:drop:today:driver', entityType: 'Drop', entityId: drop.id },
-    });
-  }
+  }, options);
 
   const voidOrder = await upsertDemoOrder(prisma, {
     key: 'demo:order:history:void', orderNumber: 'DEMO-HIST-VOID-001',
-    status: 'DELIVERED', deliveryDate: yesterday, company, employeeId: employee.id, wrap, station,
-  });
+    status: 'DELIVERED', deliveryDate: relativeSeedDate(time, -2), company, employeeId: employee.id, wrap, station,
+  }, options);
   if (historyOrder) await upsertFinancialDemoInvoice(prisma, 'DEMO-INV-PAID', historyOrder, 'PAID');
   if (todayOrder) await upsertFinancialDemoInvoice(prisma, 'DEMO-INV-ISSUED', todayOrder, 'ISSUED', true);
   if (voidOrder) await upsertFinancialDemoInvoice(prisma, 'DEMO-INV-VOID', voidOrder, 'VOID');
@@ -362,13 +330,15 @@ async function upsertDemoOrder(
     wrap: { id: string; name: string; sku: string };
     station: { id: string; code: string; name: string };
   },
+  options: SeedOptions = {},
 ): Promise<string | null> {
   const address = input.company.defaultAddress;
   if (!address || !input.company.priceTierId) {
     return null;
   }
 
-  const orderId = await upsertFinancialDemoOrder(prisma, {
+  const existing = await prisma.order.findUnique({ where: { orderNumber: input.orderNumber }, select: { id: true } });
+  const orderId = existing ? await upsertFinancialDemoOrder(prisma, {
     orderNumber: input.orderNumber, companyId: input.company.id,
     customerEmployeeId: input.employeeId, status: input.status,
     deliveryDate: input.deliveryDate, deliveryTime: new Date('1970-01-01T12:30:00.000Z'),
@@ -376,7 +346,10 @@ async function upsertDemoOrder(
     deliveryAddressLine1: address.line1, deliveryAddressCity: address.city,
     deliveryAddressPostalCode: address.postalCode, deliveryAddressCountry: address.country,
     priceTierId: input.company.priceTierId, priceTierName: 'Standard', leaveKitchenMinutes: 60,
-  }, input.wrap.id);
+  }, input.wrap.id) : await createSeedScenario(prisma, {
+    orderNumber: input.orderNumber, employeeId: input.employeeId, dishId: input.wrap.id,
+    deliveryDate: input.deliveryDate, status: input.status,
+  }, options);
 
   await prisma.demoOwnedRecord.upsert({
     where: { key: input.key },
@@ -389,7 +362,7 @@ async function upsertDemoOrder(
 // RICH DEMO DATA
 // ============================================================
 
-export async function seedRichDemoData(prisma: SeedClient): Promise<void> {
+export async function seedRichDemoData(prisma: SeedClient, options: SeedOptions = {}): Promise<void> {
   console.log('🌱 Seeding rich demo data...');
 
   const hot = await prisma.kitchenStation.findUnique({
@@ -536,13 +509,7 @@ export async function seedRichDemoData(prisma: SeedClient): Promise<void> {
           },
 
           workingDays: {
-            create: [
-              'MONDAY',
-              'TUESDAY',
-              'WEDNESDAY',
-              'THURSDAY',
-              'FRIDAY',
-            ].map((weekday) => ({
+            create: WEEKDAYS.map((weekday) => ({
               weekday: weekday as never,
             })),
           },
@@ -868,7 +835,7 @@ export async function seedRichDemoData(prisma: SeedClient): Promise<void> {
 // 7. OPTIONS
 // ----------------------------------------------------------
 
-const options = [
+const demoOptions = [
   ['PROTEIN-CHICKEN', 'Grilled Chicken', 300, 'PROTEIN'],
   ['PROTEIN-PANEER', 'Paneer', 200, 'PROTEIN'],
   ['PROTEIN-TOFU', 'Tofu', 180, 'PROTEIN'],
@@ -892,10 +859,10 @@ const savedOptions: Array<{
   groupCode: string;
 }> = [];
 
-for (let i = 0; i < options.length; i++) {
+for (let i = 0; i < demoOptions.length; i++) {
   // IMPORTANT:
   // Get one option from the array.
-  const [code, name, costCents, groupCode] = options[i];
+  const [code, name, costCents, groupCode] = demoOptions[i];
 
   const option = await prisma.option.upsert({
     where: {
@@ -1083,21 +1050,9 @@ for (let i = 0; i < options.length; i++) {
     },
   });
 
-  const today = new Date();
-
-  const todayUtc = new Date(
-    Date.UTC(
-      today.getUTCFullYear(),
-      today.getUTCMonth(),
-      today.getUTCDate(),
-    ),
-  );
-
-  const dateOffset = (days: number) => {
-    const date = new Date(todayUtc);
-    date.setUTCDate(date.getUTCDate() + days);
-    return date;
-  };
+  const time = seedTime(options);
+  const todayUtc = relativeSeedDate(time, 0);
+  const dateOffset = (days: number) => relativeSeedDate(time, days);
 
   let orderNumber = 100;
 
@@ -1134,7 +1089,7 @@ for (let i = 0; i < options.length; i++) {
       company,
       employee,
       dish,
-    });
+    }, options);
   }
 
   // ----------------------------------------------------------
@@ -1168,53 +1123,8 @@ for (let i = 0; i < options.length; i++) {
       company,
       employee,
       dish,
-    });
+    }, options);
 
-    // Driver deliveries for TODAY.
-    if (driver && orderId && i < 4) {
-      const deliveryTime = new Date(
-        `1970-01-01T${String(12 + i).padStart(2, '0')}:30:00.000Z`,
-      );
-
-      const drop = await prisma.drop.upsert({
-        where: {
-          companyId_companyAddressId_deliveryDate_deliveryTime: {
-            companyId: company.id,
-            companyAddressId: company.addressId,
-            deliveryDate: todayUtc,
-            deliveryTime,
-          },
-        },
-
-        update: {
-          driverStaffId: driver.id,
-        },
-
-        create: {
-          companyId: company.id,
-          companyAddressId: company.addressId,
-          deliveryDate: todayUtc,
-          deliveryTime,
-          status: 'PENDING',
-          driverStaffId: driver.id,
-        },
-      });
-
-      await prisma.dropOrder.upsert({
-        where: {
-          orderId,
-        },
-
-        update: {
-          dropId: drop.id,
-        },
-
-        create: {
-          dropId: drop.id,
-          orderId,
-        },
-      });
-    }
   }
 
   // ----------------------------------------------------------
@@ -1254,7 +1164,7 @@ for (let i = 0; i < options.length; i++) {
       company,
       employee,
       dish,
-    });
+    }, options);
   }
 
   console.log('✅ Rich demo data seeded successfully.');
@@ -1302,7 +1212,13 @@ async function createRichOrder(
       stationName: string;
     };
   },
+  options: SeedOptions = {},
 ): Promise<string | null> {
+  const existing = await prisma.order.findUnique({ where: { orderNumber: input.orderNumber }, select: { id: true } });
+  if (!existing) return createSeedScenario(prisma, {
+    orderNumber: input.orderNumber, employeeId: input.employee.id, dishId: input.dish.id,
+    deliveryDate: input.deliveryDate, status: input.status as never,
+  }, options);
   return upsertFinancialDemoOrder(prisma, {
     orderNumber: input.orderNumber, companyId: input.company.id,
     customerEmployeeId: input.employee.id, status: input.status as never,

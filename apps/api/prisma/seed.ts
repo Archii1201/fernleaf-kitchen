@@ -15,7 +15,10 @@ import {
   seedExtendedCatalogue,
   seedExtendedCompanies,
   seedExtendedPricing,
+  seedRichDemoData,
 } from './seed-demo.js';
+import { seedDailyReviewData, transactionSeedClient, type SeedOptions } from './seed-runtime.js';
+import { WEEKDAYS } from '../src/kitchen/time/weekday.js';
 
 /** The four staff accounts required by the assignment. */
 export const STAFF_ACCOUNTS: ReadonlyArray<{
@@ -656,7 +659,7 @@ async function upsertSeedCompany(
           active: true,
           domains: { create: { domain: input.domain } },
           workingDays: {
-            create: DEFAULT_WORKING_WEEK.map((weekday) => ({ weekday })),
+              create: WEEKDAYS.map((weekday) => ({ weekday })),
           },
         },
         select: { id: true, ownerEmployeeId: true },
@@ -847,18 +850,25 @@ export async function databaseIsEmpty(prisma: SeedClient): Promise<boolean> {
   return (await prisma.user.count()) === 0;
 }
 
-export async function seedAll(prisma: SeedClient): Promise<void> {
-  await seedAuth(prisma);
-  await seedKitchenSettings(prisma);
-  await seedReferenceData(prisma);
-  await seedCatalogueSamples(prisma);
-  await seedExtendedCatalogue(prisma);
-  await seedMenu(prisma);
-  await seedPricing(prisma);
-  await seedExtendedPricing(prisma);
-  await seedCompanies(prisma);
-  await seedExtendedCompanies(prisma);
-  await seedDemoOperations(prisma);
+export async function seedAll(prisma: SeedClient, options: SeedOptions = {}): Promise<void> {
+  const evaluated = { ...options, now: options.now ?? new Date() };
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(8715, hashtext('demo:seed:all'))`;
+    const client = transactionSeedClient(tx);
+    await seedAuth(client);
+    await seedKitchenSettings(client);
+    await seedReferenceData(client);
+    await seedCatalogueSamples(client);
+    await seedExtendedCatalogue(client);
+    await seedMenu(client);
+    await seedPricing(client);
+    await seedExtendedPricing(client);
+    await seedCompanies(client);
+    await seedExtendedCompanies(client);
+    await seedDemoOperations(client, evaluated);
+    await seedRichDemoData(client, evaluated);
+    await seedDailyReviewData(client, evaluated);
+  }, { timeout: 90_000 });
 }
 
 /**
@@ -867,14 +877,14 @@ export async function seedAll(prisma: SeedClient): Promise<void> {
  */
 export async function seedIfNeeded(
   prisma: SeedClient,
-  options: { force?: boolean } = {},
+  options: SeedOptions & { force?: boolean } = {},
 ): Promise<{ seeded: boolean }> {
   const force = options.force ?? process.env.FORCE_SEED === 'true';
   if (!force && !(await databaseIsEmpty(prisma))) {
     return { seeded: false };
   }
 
-  await seedAll(prisma);
+  await seedAll(prisma, options);
   return { seeded: true };
 }
 

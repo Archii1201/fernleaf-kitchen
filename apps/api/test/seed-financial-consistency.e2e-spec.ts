@@ -13,6 +13,7 @@ import { Money } from '../src/pricing/domain/money.js';
 import { PricingResolver } from '../src/pricing/domain/pricing-resolver.js';
 import { PricingContextLoader } from '../src/pricing/pricing-context.loader.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { reserveDemoCompanies, RICH_DOMAINS } from './demo-seed.fixture.js';
 
 const NUMBERS = ['DEMO-INV-ISSUED', 'DEMO-INV-PAID', 'DEMO-INV-VOID'];
 const orderNumbers = ['DEMO-HIST-001', 'DEMO-TODAY-001', 'DEMO-FUT-001', 'DEMO-HIST-VOID-001',
@@ -70,6 +71,11 @@ describe('P0-7 seeded financial consistency (real PostgreSQL)', () => {
       if (domain) await tx.companyDomain.update({ where: { id: domain.id }, data: { domain: `p07-preserved-${domain.id}.test` } });
       const employee = await tx.customerEmployee.findUnique({ where: { email: 'alice@northwind.com' } });
       if (employee) await tx.customerEmployee.update({ where: { id: employee.id }, data: { email: `p07-preserved-${employee.id}@example.test` } });
+      await reserveDemoCompanies(tx, [...RICH_DOMAINS, 'fernleaf-demo.test']);
+      const reviewKeys = await tx.demoOwnedRecord.findMany({ where: { key: { startsWith: 'demo:review:' } } });
+      for (const row of reviewKeys) await tx.demoOwnedRecord.update({ where: { key: row.key }, data: { key: `p07-preserved:${row.key}` } });
+      const reviewOrders = await tx.order.findMany({ where: { orderNumber: { startsWith: 'DEMO-REVIEW-' } } });
+      for (const row of reviewOrders) await tx.order.update({ where: { id: row.id }, data: { orderNumber: `p07-preserved-${row.id}` } });
       preservedHistory = await history();
       await seedAll(db);
       await seedRichDemoData(db);

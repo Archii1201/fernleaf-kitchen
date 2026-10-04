@@ -1,39 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
+import { seedDailyReviewData } from '../../prisma/seed-runtime.js';
 import { DemoMaintenanceService } from './demo-maintenance.service.js';
 
+vi.mock('../../prisma/seed-runtime.js', () => ({ seedDailyReviewData: vi.fn() }));
+
 describe('DemoMaintenanceService', () => {
-  it('creates only missing demo keys and skips illegal cutoff dates', async () => {
-    const prisma = {
-      demoOwnedRecord: {
-        findUnique: vi.fn().mockResolvedValue(null),
-        create: vi.fn(),
-        delete: vi.fn(),
-      },
-      customerEmployee: {
-        findUnique: vi.fn().mockResolvedValue({ id: 'emp' }),
-      },
-      dish: { findUnique: vi.fn().mockResolvedValue({ id: 'dish' }) },
-      user: { findUnique: vi.fn().mockResolvedValue({ id: 'admin' }) },
-      staff: { findUnique: vi.fn().mockResolvedValue({ id: 'drv' }) },
-      order: { findUnique: vi.fn().mockResolvedValue(null) },
-      drop: { upsert: vi.fn(), findUnique: vi.fn() },
-      dropOrder: { upsert: vi.fn() },
-    };
-    const create = vi.fn().mockResolvedValue({ id: 'ord-1' });
-
-    const service = new DemoMaintenanceService(
-      prisma as never,
-      {
-        today: () => '2026-10-04',
-        timeZone: 'Asia/Kolkata',
-      } as never,
-      { resolve: vi.fn().mockResolvedValue({ hasPassed: true }) } as never,
-      { create } as never,
-    );
-
-    const result = await service.maintain();
-    expect(create).toHaveBeenCalled();
-    expect(result.created.length).toBeGreaterThan(0);
-    expect(create.mock.calls.every((call) => call[0].deliveryDate !== '2026-10-04')).toBe(true);
+  it('uses the application clock and timezone for the shared date-owned seed path', async () => {
+    const now = new Date('2031-03-04T20:00:00Z');
+    const prisma = {};
+    vi.mocked(seedDailyReviewData).mockResolvedValue({ created: ['demo:review:today:2031-03-05'] });
+    const service = new DemoMaintenanceService(prisma as never, {
+      now: () => now, timeZone: 'Asia/Kolkata',
+    } as never);
+    expect(await service.maintain()).toEqual({ created: ['demo:review:today:2031-03-05'] });
+    expect(seedDailyReviewData).toHaveBeenCalledWith(prisma, { now, timeZone: 'Asia/Kolkata' });
+  });
+  it('surfaces validation failures instead of reporting empty success', async () => {
+    vi.mocked(seedDailyReviewData).mockRejectedValue(new Error('Company does not receive deliveries'));
+    const service = new DemoMaintenanceService({} as never, { now: () => new Date(), timeZone: 'Asia/Kolkata' } as never);
+    await expect(service.maintain()).rejects.toThrow('Company does not receive deliveries');
   });
 });
