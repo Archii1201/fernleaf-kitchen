@@ -64,8 +64,26 @@ describe('MenuContextLoader', () => {
     expect(priceTierService.resolveEffectiveTierId).toHaveBeenCalledWith(null);
     expect(pricingLoader.loadForTier).toHaveBeenCalledWith(DEFAULT_TIER.id, [
       'dish',
+      'option',
     ]);
     expect(context.priceTier).toEqual(DEFAULT_TIER);
     expect(context.company.priceTierId).toBe(DEFAULT_TIER.id);
+  });
+
+  it('loads both dish and option prices into PricingContext so options can be priced on orders', async () => {
+    prisma.company.findUnique.mockResolvedValue({
+      id: 'company-2',
+      name: 'Custom tier co',
+      priceTierId: 'custom-tier',
+      priceTier: { id: 'custom-tier', code: 'CUSTOM', name: 'Custom' },
+    });
+    priceTierService.resolveEffectiveTierId.mockResolvedValue('custom-tier');
+
+    await loader.load({ companyId: 'company-2' });
+
+    expect(pricingLoader.loadForTier).toHaveBeenCalledWith('custom-tier', [
+      'dish',
+      'option',
+    ]);
   });
 });

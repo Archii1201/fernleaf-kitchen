@@ -23,6 +23,7 @@ describe('OrderRepository', () => {
     const kitchenTime = {
       fromDateString: vi.fn().mockReturnValue(new Date()),
       fromTimeString: vi.fn().mockReturnValue(new Date()),
+      combineDateAndTime: vi.fn().mockReturnValue(new Date()),
     };
 
     const repository = new OrderRepository(

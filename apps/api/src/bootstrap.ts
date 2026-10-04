@@ -7,9 +7,19 @@ import { requestIdMiddleware } from './common/middleware/request-id.middleware.j
  * tests both call this, so the tests exercise the same middleware, prefix and
  * validation rules as production.
  */
-export function configureApp(app: INestApplication): void {
+export function configureApp(
+  app: INestApplication,
+  options: { corsOrigin?: string } = {},
+): void {
   app.use(requestIdMiddleware());
   app.use(cookieParser());
+
+  if (options.corsOrigin) {
+    app.enableCors({
+      origin: options.corsOrigin,
+      credentials: true,
+    });
+  }
 
   app.setGlobalPrefix('api');
 

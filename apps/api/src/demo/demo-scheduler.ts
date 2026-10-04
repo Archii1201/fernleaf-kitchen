@@ -2,7 +2,6 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { DateTime } from 'luxon';
 import { KitchenTime } from '../kitchen/time/kitchen-time.js';
 import { DemoMaintenanceService } from './demo-maintenance.service.js';
-import { seedIfNeeded } from '../../prisma/seed.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -13,7 +12,7 @@ export class DemoScheduler implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly maintenance: DemoMaintenanceService,
     private readonly kitchenTime: KitchenTime,
-    private readonly prisma: PrismaService,
+    // private readonly prisma: PrismaService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -21,12 +20,12 @@ export class DemoScheduler implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const result = await seedIfNeeded(this.prisma, {
-      force: process.env.FORCE_SEED === 'true',
-    });
-    if (result.seeded) {
-      this.logger.log('Seeded empty database on startup');
-    }
+    // const result = await seedIfNeeded(this.prisma, {
+    //   force: process.env.FORCE_SEED === 'true',
+    // });
+    // if (result.seeded) {
+    //   this.logger.log('Seeded empty database on startup');
+    // }
 
     try {
       await this.maintenance.maintain();

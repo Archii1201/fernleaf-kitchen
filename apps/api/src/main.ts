@@ -12,7 +12,9 @@ async function bootstrap() {
   const configService = app.get<ConfigService<Env, true>>(ConfigService);
   const port = configService.get('PORT', { infer: true });
 
-  configureApp(app);
+  configureApp(app, {
+    corsOrigin: configService.get('APP_URL', { infer: true }),
+  });
 
   setupSwagger(app);
 

@@ -1,10 +1,5 @@
-export default function HomePage() {
-  return (
-    <main>
-      <h1>Fernleaf Kitchen</h1>
-      <p>Kitchen operations admin panel</p>
+import { redirect } from 'next/navigation';
 
-      <a href="/login">Login</a>
-    </main>
-  );
+export default function HomePage() {
+  redirect('/dashboard');
 }

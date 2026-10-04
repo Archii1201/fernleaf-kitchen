@@ -128,7 +128,10 @@ export class MenuContextLoader {
     const priceTierId = await this.priceTierService.resolveEffectiveTierId(
       company.priceTierId,
     );
-    const pricing = await this.pricingLoader.loadForTier(priceTierId, ['dish']);
+    const pricing = await this.pricingLoader.loadForTier(priceTierId, [
+      'dish',
+      'option',
+    ]);
     const priceTier =
       company.priceTier ??
       (await this.prisma.priceTier.findUniqueOrThrow({
